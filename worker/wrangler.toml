@@ -2,6 +2,7 @@
 name = "dr-sample-helper"
 main = "worker.js"
 compatibility_date = "2026-11-01"
+workers_dev = true
 
 [vars]
 DOCTOR_NAME = "Dr. Sample Name"
@@ -11,7 +12,7 @@ VAPID_SUBJECT = "mailto:support@arshees.com"
 
 [[kv_namespaces]]
 binding = "PUSH"
-id = "REPLACE_WITH_KV_ID"
+id = "a399c94d216b43aea26f0aca5db8df5a"   # sample doctor; each doctor gets their own
 
 # Secrets (never in this file): CAL_API_KEY, DAILY_API_KEY, PIN_HASH, SESSION_SECRET,
 # CAL_WEBHOOK_SECRET, VAPID_PUBLIC_KEY, VAPID_PRIVATE_JWK  ->  run: node make-secrets.mjs <PIN>
