@@ -1,6 +1,6 @@
 /* Service worker: lets the site install as an app and shows the doctor's booking notifications.
    Always loads the latest website from the internet; keeps a copy of the main pages for offline opening. */
-const CACHE = "doc-v1";
+const CACHE = "doc-v2";
 const CORE = ["./", "index.html", "doctor.html", "consult.html", "style.css", "app.js", "config.js", "qrcode.js", "doctor.jpg", "icons/icon-192.png"];
 
 self.addEventListener("install", e => { e.waitUntil(caches.open(CACHE).then(c => c.addAll(CORE)).catch(() => {})); self.skipWaiting(); });
@@ -8,7 +8,7 @@ self.addEventListener("activate", e => { e.waitUntil(caches.keys().then(k => Pro
 self.addEventListener("fetch", e => {
   const r = e.request;
   if (r.method !== "GET" || new URL(r.url).origin !== location.origin) return;   // booking, payments, video, helper: always live
-  e.respondWith(fetch(r).then(res => { const copy = res.clone(); caches.open(CACHE).then(c => c.put(r, copy)); return res; })
+  e.respondWith((r.mode === "navigate" ? fetch(r) : fetch(r.url, { cache: "no-cache" })).then(res => { const copy = res.clone(); caches.open(CACHE).then(c => c.put(r, copy)); return res; })
     .catch(() => caches.match(r).then(m => m || (r.mode === "navigate" ? caches.match("index.html") : undefined))));
 });
 
