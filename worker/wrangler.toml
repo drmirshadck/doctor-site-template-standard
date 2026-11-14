@@ -1,0 +1,17 @@
+# One helper per doctor. Change name, vars and the KV id for each doctor.
+name = "dr-sample-helper"
+main = "worker.js"
+compatibility_date = "2026-11-01"
+
+[vars]
+DOCTOR_NAME = "Dr. Sample Name"
+DAILY_ROOM_URL = ""                       # e.g. https://drsample.daily.co/consult
+ALLOWED_ORIGINS = "https://drmirshadck.github.io"   # the doctor's site, e.g. https://drsample.com,https://www.drsample.com
+VAPID_SUBJECT = "mailto:support@arshees.com"
+
+[[kv_namespaces]]
+binding = "PUSH"
+id = "REPLACE_WITH_KV_ID"
+
+# Secrets (never in this file): CAL_API_KEY, DAILY_API_KEY, PIN_HASH, SESSION_SECRET,
+# CAL_WEBHOOK_SECRET, VAPID_PUBLIC_KEY, VAPID_PRIVATE_JWK  ->  run: node make-secrets.mjs <PIN>
