@@ -116,7 +116,8 @@ async function cal(env, path, init = {}) {
     headers: { "Authorization": `Bearer ${env.CAL_API_KEY}`, "cal-api-version": CAL_VERSION, "Content-Type": "application/json" }
   });
   const data = await r.json().catch(() => ({}));
-  if (!r.ok) throw err(502, (data && data.error && data.error.message) || "Cal.com did not accept the request.");
+  if (r.status === 401 || r.status === 403) throw err(502, "Your booking calendar is not connected. Please contact DotCom support (support@arshees.com).");
+  if (!r.ok) throw err(502, (data && data.error && data.error.message) || "Cal.com did not accept the request. Please try again.");
   return data;
 }
 async function bookings(env) {

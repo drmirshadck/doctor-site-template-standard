@@ -25,10 +25,11 @@ Before building, have these ready (all in the doctor's OWN name):
 
 1. `config.js` → `helper.url` = the doctor's helper address. Edit `manifest.webmanifest` (name, short_name, theme_color) and run `python3 make_icons.py`.
 2. Make the secrets: `node worker/make-secrets.mjs <PIN>` (PIN = 4–8 digits).
-3. Cloudflare → Workers → Create → name `dr-<name>-helper` → paste `worker/worker.js`.
-   - Variables: `DOCTOR_NAME`, `DAILY_ROOM_URL`, `ALLOWED_ORIGINS` (the doctor's site), `VAPID_SUBJECT`.
-   - Secrets: `CAL_API_KEY`, `DAILY_API_KEY`, and the five from step 2.
-   - KV namespace bound as `PUSH`.
+3. Cloudflare (account drmirshadck@gmail.com, already connected to GitHub):
+   - Workers KV → Create → `dr-<name>-helper-push`; put its id in `worker/wrangler.toml` along with `name = "dr-<name>-helper"`, `DOCTOR_NAME`, `DAILY_ROOM_URL` and `ALLOWED_ORIGINS` (the doctor's site). Push.
+   - Workers & Pages → Create → Continue with GitHub → pick the doctor's repo → Project name `dr-<name>-helper`, Deploy command `npx wrangler deploy` (field may be pre-filled: don't type it twice), Advanced → Path `/worker`, Preview builds off → Deploy.
+   - Worker → Settings → Variables and secrets → Add (tick **Secret** on each): `CAL_API_KEY`, `DAILY_API_KEY` and the five from step 2.
+   - Helper address: `https://dr-<name>-helper.drmirshadck.workers.dev`. Every push to the repo redeploys it automatically.
 4. Cal.com: every paid event type → **Requires confirmation**. Webhook → `https://<helper>/cal-webhook`, events Booking Requested / Cancelled / Rescheduled, secret = `CAL_WEBHOOK_SECRET`.
 5. Test: book as a patient → notification → Requests → Confirm → patient email → Start call. Cancel the test booking.
 6. Doctor: open `https://<domain>/doctor.html` on the phone → enter PIN → **Turn on** notifications → add to Home Screen.
