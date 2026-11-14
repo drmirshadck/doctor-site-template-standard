@@ -34,6 +34,10 @@ Before building, have these ready (all in the doctor's OWN name):
 5. Test: book as a patient → notification → Requests → Confirm → patient email → Start call. Cancel the test booking.
 6. Doctor: open `https://<domain>/doctor.html` on the phone → enter PIN → **Turn on** notifications → add to Home Screen.
 
+**Doctor access (hidden from patients):** the **©** in the website footer opens the doctor's PIN page (`doctor.html`). The same PIN gives bookings and the video room as host: Start call on the dashboard, or, on `consult.html`, a "Start as doctor (host)" button that only appears on the doctor's own logged-in phone. The tiny "·" after the help line on `consult.html` also opens the PIN page and goes straight to the room.
+
+**Install app (Standard only):** an Install app button shows in the top bar and footer on phones and browsers that support it (iPhone shows Add to Home Screen steps). When the doctor opens the installed app, it goes straight to their dashboard. Push notifications are only ever requested on the doctor's dashboard, never from patients.
+
 No patient data is stored: bookings are read live from Cal.com. Only the doctor's phone subscription is kept (Cloudflare KV).
 
 ## Files

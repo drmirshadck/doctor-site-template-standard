@@ -289,3 +289,13 @@ textarea{resize:vertical;min-height:80px}
 .sheet.wide{width:min(760px,100%)}
 .paylink{display:none}
 @media (pointer:coarse){.paylink{display:inline-flex}}
+
+/* Standard: install app + quiet clinic login */
+.navbtns{display:flex;gap:8px;align-items:center}
+.install-btn{gap:8px}
+.install-btn[hidden]{display:none!important}
+@media (max-width:560px){#installNav span{display:none}#installNav{padding:10px 12px}}
+.install-row{display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap;margin-top:34px;padding:18px 20px;border-radius:18px;background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.14)}
+.install-row b{display:block;font-family:var(--display);font-size:1.05rem}.install-row span{opacity:.8;font-size:.92rem}
+.inst{padding:4px 0 6px 20px;display:grid;gap:10px;line-height:1.5}
+a.quiet{color:inherit;text-decoration:none;cursor:default}

@@ -49,6 +49,7 @@
   #callWrap iframe{width:100%;height:100%;border:0}
   .note{margin-top:16px;text-align:center;color:var(--muted);font-size:14px}
   .note a{color:var(--blue);font-weight:600}
+  a.quiet{color:inherit;text-decoration:none;margin-left:6px;cursor:default}
   .err{display:none;margin-bottom:18px;padding:14px 16px;border-radius:14px;background:#fff4e5;color:#7a4b00;font-size:15px}
   @media (max-width:900px){
     .intro{grid-template-columns:1fr}
@@ -123,6 +124,27 @@
   const isHost = !!hostToken;
   const nameInput = $('name'), err = $('err');
 
+  // Standard: the doctor (logged in on this site with their PIN) can open the room as host from here
+  let docToken = ""; try { docToken = localStorage.getItem("docToken") || ""; } catch (e) {}
+  const HELPER = ((S.helper && S.helper.url) || "").replace(/\/$/, "");
+  if (!isHost && HELPER) {
+    const q = document.createElement("a");
+    q.href = "doctor.html?next=room"; q.className = "quiet"; q.setAttribute("aria-label", "Clinic login"); q.textContent = "·";
+    document.querySelector(".note").appendChild(q);
+    if (docToken) {
+      const b = document.createElement("button"); b.type = "button"; b.className = "btn"; b.style.marginTop = "12px"; b.style.background = "var(--blue)";
+      b.textContent = "Start as doctor (host)";
+      b.onclick = async () => {
+        b.disabled = true; b.textContent = "Opening…";
+        try {
+          const r = await fetch(HELPER + "/host-token", { method: "POST", headers: { Authorization: "Bearer " + docToken } });
+          const d = await r.json(); if (!r.ok || !d.token) throw new Error(d.error || "");
+          location.href = "consult.html?host=" + encodeURIComponent(d.token);
+        } catch (e) { location.href = "doctor.html?next=room"; }
+      };
+      document.getElementById("joinForm").appendChild(b);
+    }
+  }
   if (isHost) {
     $('roleTag').textContent = 'Doctor login';
     $('title').textContent = 'Start consultations';

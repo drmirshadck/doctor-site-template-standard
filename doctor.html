@@ -97,7 +97,7 @@ function showLogin(msg) {
   $("pin").focus();
   $("lf").onsubmit = async e => {
     e.preventDefault(); const b = $("lb"); b.disabled = true; $("le").textContent = "";
-    try { const d = await api("/login", { method: "POST", body: JSON.stringify({ pin: $("pin").value.trim() }) }); token = d.token; store.set(token); start(); }
+    try { const d = await api("/login", { method: "POST", body: JSON.stringify({ pin: $("pin").value.trim() }) }); token = d.token; store.set(token); if (new URLSearchParams(location.search).get("next") === "room") return openRoom(); start(); }
     catch (er) { $("le").textContent = er.message; b.disabled = false; $("pin").select(); }
   };
 }
@@ -172,6 +172,11 @@ function declineB(uid) {
     $("dYes").disabled = false;
   };
 }
+async function openRoom() {
+  $("main").innerHTML = `<div class="empty">Opening the consultation room…</div>`;
+  try { const d = await api("/host-token", { method: "POST" }); location.href = "consult.html?host=" + encodeURIComponent(d.token); }
+  catch (e) { $("main").innerHTML = `<div class="empty">${esc(e.message)}</div>`; }
+}
 async function startCall(btn) {
   btn.disabled = true; btn.textContent = "Opening…";
   try { const d = await api("/host-token", { method: "POST" }); location.href = "consult.html?host=" + encodeURIComponent(d.token); }
@@ -194,7 +199,7 @@ async function enablePush() {
   } catch (e) { toast(e.message || "Could not turn on notifications."); }
 }
 
-token ? start() : showLogin();
+token ? (new URLSearchParams(location.search).get("next") === "room" ? openRoom() : start()) : showLogin();
 })();
 </script>
 </body>

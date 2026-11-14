@@ -38,7 +38,7 @@ $("#app").innerHTML = `
 <div class="navwrap"><div class="pill">
   <a class="brand" href="#top" aria-label="${esc(D.name)} home">${LOGO}<span><b>${esc(S.brand.title)}</b><small>${esc(S.brand.subtitle)}</small></span></a>
   <nav class="links" aria-label="Main">${nav.map(([h, l]) => `<a href="#${h}">${l}</a>`).join("")}</nav>
-  <button class="btn btn-light" data-book>Book now</button>
+  <div class="navbtns"><button class="btn btn-line install-btn" id="installNav" hidden aria-label="Install app"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><path d="M12 3v12M7 10l5 5 5-5M5 21h14"/></svg><span>Install app</span></button><button class="btn btn-light" data-book>Book now</button></div>
 </div></div>
 
 <main id="top">
@@ -122,7 +122,8 @@ ${igUrl ? `<section class="insta" id="social"><div class="wrap insta-grid">
     <div><h3>Clinic</h3><p>${[C.clinicName].concat(C.address).map(esc).join("<br>")}</p></div>
     ${igUrl ? `<div><h3>Follow</h3><p>Instagram<br><a href="${igUrl}" target="_blank" rel="noopener">@${esc(IG.handle)}</a></p></div>` : "<div></div>"}
   </div>
-  <div class="legal"><span>© ${esc(S.meta.year)} ${esc(D.name)} · ${esc(C.clinicName)}</span><span>Online consultations are not for medical emergencies.</span></div>
+  <div class="install-row" id="installRow" hidden><div><b>Get the app</b><span>Book and join consultations from your home screen.</span></div><button class="btn btn-light install-btn" id="installFoot"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><path d="M12 3v12M7 10l5 5 5-5M5 21h14"/></svg><span>Install app</span></button></div>
+  <div class="legal"><span><a href="doctor.html" class="quiet" aria-label="Clinic login">©</a> ${esc(S.meta.year)} ${esc(D.name)} · ${esc(C.clinicName)}</span><span>Online consultations are not for medical emergencies.</span></div>
 </div></footer>
 
 <a class="fab-wa" href="${wa(`Hi, I'd like to book a consultation with ${D.name}.`)}" target="_blank" rel="noopener" aria-label="Chat on WhatsApp"><span class="tip">Chat with us on WhatsApp</span>${WAI}</a>
@@ -234,8 +235,29 @@ function drawQR() {
   el.innerHTML = q.createImgTag(6, 0, "UPI QR code");
 }
 
-/* ---------- install as app ---------- */
+/* ---------- install as app (Standard) ---------- */
 if ("serviceWorker" in navigator) addEventListener("load", () => navigator.serviceWorker.register("sw.js").catch(() => {}));
+(function () {
+  const standalone = matchMedia("(display-mode: standalone)").matches || navigator.standalone === true;
+  let docToken = ""; try { docToken = localStorage.getItem("docToken") || ""; } catch (e) {}
+  // the doctor opening the installed app goes straight to their dashboard
+  if (standalone && docToken && /source=app/.test(location.search)) { location.replace("doctor.html"); return; }
+  if (standalone) return;
+  const btns = [$("#installNav"), $("#installFoot")];
+  const ua = navigator.userAgent;
+  const isIOS = /iphone|ipad|ipod/i.test(ua) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+  let prompt = null;
+  const show = () => { btns.forEach(b => b && (b.hidden = false)); $("#installRow").hidden = false; };
+  if (isIOS) show();
+  addEventListener("beforeinstallprompt", e => { e.preventDefault(); prompt = e; show(); });
+  addEventListener("appinstalled", () => { btns.forEach(b => b && (b.hidden = true)); $("#installRow").hidden = true; });
+  const help = () => {
+    const d = document.createElement("div"); d.className = "overlay"; d.innerHTML = `<div class="sheet" role="dialog" aria-modal="true"><div class="sheet-top"><h3>Install the app</h3><button class="x" aria-label="Close">×</button></div>
+      <ol class="inst">${isIOS ? "<li>Tap the <b>Share</b> button at the bottom of Safari</li><li>Scroll down and tap <b>Add to Home Screen</b></li><li>Tap <b>Add</b></li>" : "<li>Open the browser menu <b>⋮</b> (top right)</li><li>Tap <b>Install app</b> or <b>Add to Home screen</b></li><li>Tap <b>Install</b></li>"}</ol></div>`;
+    document.body.appendChild(d); d.addEventListener("click", e => { if (e.target === d || e.target.closest(".x")) d.remove(); });
+  };
+  btns.forEach(b => b && (b.onclick = async () => { if (prompt) { prompt.prompt(); await prompt.userChoice.catch(() => {}); prompt = null; } else help(); }));
+})();
 
 /* ---------- count-up stats ---------- */
 (function () {
