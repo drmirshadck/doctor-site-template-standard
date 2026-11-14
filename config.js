@@ -104,7 +104,7 @@ window.SITE = {
 
   /* ---------- Doctor dashboard helper (Standard package) ---------- */
   helper: {
-    url: ""   // the doctor's Cloudflare helper, e.g. "https://dr-sample-helper.dotcom.workers.dev"
+    url: "https://dr-sample-helper.drmirshadck.workers.dev"   // the doctor's Cloudflare helper, e.g. "https://dr-sample-helper.dotcom.workers.dev"
   },
 
   /* ---------- "Consult from anywhere" panel ---------- */
