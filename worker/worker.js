@@ -12,11 +12,16 @@
  *   GET  /last-event                     -> {type, at}   (no patient details)
  *   GET  /health
  *
- * Secrets (Cloudflare → Worker → Settings → Variables and Secrets):
- *   CAL_API_KEY, DAILY_API_KEY, PIN_HASH, SESSION_SECRET, CAL_WEBHOOK_SECRET,
- *   VAPID_PUBLIC_KEY, VAPID_PRIVATE_JWK
- * Plain variables:
- *   DAILY_ROOM_URL  e.g. https://drsample.daily.co/consult
+ * ONE DOCTOR (default):
+ *   Secrets: CAL_API_KEY, DAILY_API_KEY, PIN_HASH
+ *   Vars:    DOCTOR_NAME, DAILY_ROOM_URL  e.g. https://drsample.daily.co/consult
+ * SEVERAL DOCTORS on one website (each with their own Cal.com, Daily and PIN):
+ *   Var:     DOCTORS_JSON  [{"id":"anish","name":"Dr. Anish","roomUrl":"https://..daily.co/consult"}, ...]
+ *   Secrets: PINS {"anish":"<hash>",...}, CAL_KEYS {"anish":"cal_live_..."}, DAILY_KEYS {"anish":"..."}
+ *   Cal.com webhook per doctor: <helper>/cal-webhook?d=<id>
+ *   Each doctor logs in with their own PIN and sees only their own bookings and alerts.
+ * Shared secrets: SESSION_SECRET, CAL_WEBHOOK_SECRET, VAPID_PUBLIC_KEY, VAPID_PRIVATE_JWK
+ * Other vars:
  *   ALLOWED_ORIGINS e.g. https://drsample.com,https://www.drsample.com
  *   DOCTOR_NAME, VAPID_SUBJECT (mailto:support@arshees.com)
  * KV binding: PUSH
@@ -51,7 +56,7 @@ async function route(req, env, url, fromSite) {
   const M = req.method;
 
   if (p === "/health") return json({ ok: true });
-  if (p === "/cal-webhook" && M === "POST") return calWebhook(req, env);
+  if (p === "/cal-webhook" && M === "POST") return calWebhook(req, env, url.searchParams.get("d") || "");
   if (p === "/vapid" && M === "GET") return json({ key: env.VAPID_PUBLIC_KEY || "" });
   if (p === "/last-event" && M === "GET") return json((await env.PUSH.get("lastEvent", "json")) || {});
 
@@ -59,31 +64,43 @@ async function route(req, env, url, fromSite) {
   if (!fromSite) throw err(403, "Not allowed.");
   if (p === "/login" && M === "POST") return login(req, env);
 
-  await requireSession(req, env);
-  if (p === "/bookings" && M === "GET") return bookings(env);
+  const doc = await requireSession(req, env);
+  if (p === "/bookings" && M === "GET") return bookings(env, doc);
   if (p === "/confirm" && M === "POST") {
     const { uid } = await body(req);
-    await cal(env, `/bookings/${encodeURIComponent(needUid(uid))}/confirm`, { method: "POST" });
+    await cal(env, doc, `/bookings/${encodeURIComponent(needUid(uid))}/confirm`, { method: "POST" });
     return json({ ok: true });
   }
   if (p === "/decline" && M === "POST") {
     const { uid, reason } = await body(req);
-    await cal(env, `/bookings/${encodeURIComponent(needUid(uid))}/decline`, {
+    await cal(env, doc, `/bookings/${encodeURIComponent(needUid(uid))}/decline`, {
       method: "POST", body: JSON.stringify({ reason: String(reason || "The doctor is not available at this time.").slice(0, 300) })
     });
     return json({ ok: true });
   }
-  if (p === "/host-token" && M === "POST") return hostToken(env);
+  if (p === "/host-token" && M === "POST") return hostToken(env, doc);
   if (p === "/subscribe" && M === "POST") {
     const { subscription } = await body(req);
     if (!subscription || !/^https:\/\//.test(subscription.endpoint || "")) throw err(400, "Invalid subscription.");
-    const subs = ((await env.PUSH.get("subs", "json")) || []).filter(s => s.endpoint !== subscription.endpoint);
+    const subs = ((await env.PUSH.get(subsKey(doc), "json")) || []).filter(s => s.endpoint !== subscription.endpoint);
     subs.push({ endpoint: subscription.endpoint, at: Date.now() });
-    await env.PUSH.put("subs", JSON.stringify(subs.slice(-10)));
+    await env.PUSH.put(subsKey(doc), JSON.stringify(subs.slice(-10)));
     return json({ ok: true });
   }
   throw err(404, "Not found.");
 }
+
+/* ---------- doctors: one (default) or several (DOCTORS_JSON) ---------- */
+function jmap(env, k) { try { return JSON.parse(env[k] || "{}") || {}; } catch (e) { return {}; } }
+function doctors(env) {
+  let list = []; try { list = JSON.parse(env.DOCTORS_JSON || "[]"); } catch (e) {}
+  if (!Array.isArray(list) || !list.length) {
+    return [{ id: "main", name: env.DOCTOR_NAME || "Doctor", roomUrl: env.DAILY_ROOM_URL || "", calKey: env.CAL_API_KEY, dailyKey: env.DAILY_API_KEY, pinHash: env.PIN_HASH }];
+  }
+  const pins = jmap(env, "PINS"), cals = jmap(env, "CAL_KEYS"), dailies = jmap(env, "DAILY_KEYS");
+  return list.filter(d => d && /^[a-z0-9-]{1,40}$/i.test(d.id || "")).map(d => ({ id: d.id, name: d.name || "Doctor", roomUrl: d.roomUrl || "", calKey: cals[d.id], dailyKey: dailies[d.id], pinHash: pins[d.id] }));
+}
+const subsKey = d => d.id === "main" ? "subs" : "subs:" + d.id;
 
 /* ---------- auth ---------- */
 async function login(req, env) {
@@ -92,38 +109,42 @@ async function login(req, env) {
   const fails = +((await env.PUSH.get(key)) || 0);
   if (fails >= 8) throw err(429, "Too many wrong attempts. Try again in 15 minutes.");
   const { pin } = await body(req);
-  const ok = /^\d{4,8}$/.test(String(pin || "")) && safeEq(await sha256hex("dotcom-pin:" + pin), String(env.PIN_HASH || "").toLowerCase());
-  if (!ok) {
+  const hash = /^\d{4,8}$/.test(String(pin || "")) ? await sha256hex("dotcom-pin:" + pin) : "";
+  const doc = hash ? doctors(env).find(d => safeEq(hash, String(d.pinHash || "").toLowerCase())) : null;
+  if (!doc) {
     await env.PUSH.put(key, String(fails + 1), { expirationTtl: 900 });
     throw err(401, "Wrong PIN.");
   }
   const exp = Date.now() + 30 * 24 * 3600 * 1000;
-  const payload = b64url(enc.encode(JSON.stringify({ exp })));
-  return json({ token: payload + "." + await hmacB64(env.SESSION_SECRET, payload), exp });
+  const payload = b64url(enc.encode(JSON.stringify({ exp, d: doc.id })));
+  return json({ token: payload + "." + await hmacB64(env.SESSION_SECRET, payload), exp, doctor: { id: doc.id, name: doc.name } });
 }
 async function requireSession(req, env) {
   const t = (req.headers.get("authorization") || "").replace(/^Bearer\s+/i, "");
   const [payload, sig] = t.split(".");
   if (!payload || !sig || !safeEq(sig, await hmacB64(env.SESSION_SECRET, payload))) throw err(401, "Please log in again.");
-  let exp = 0; try { exp = JSON.parse(new TextDecoder().decode(unb64url(payload))).exp; } catch (e) {}
-  if (!(exp > Date.now())) throw err(401, "Please log in again.");
+  let p = {}; try { p = JSON.parse(new TextDecoder().decode(unb64url(payload))); } catch (e) {}
+  if (!(p.exp > Date.now())) throw err(401, "Please log in again.");
+  const doc = doctors(env).find(d => d.id === (p.d || "main"));
+  if (!doc) throw err(401, "Please log in again.");
+  return doc;
 }
 
 /* ---------- Cal.com ---------- */
-async function cal(env, path, init = {}) {
+async function cal(env, doc, path, init = {}) {
   const r = await fetch(CAL + path, {
     ...init,
-    headers: { "Authorization": `Bearer ${env.CAL_API_KEY}`, "cal-api-version": CAL_VERSION, "Content-Type": "application/json" }
+    headers: { "Authorization": `Bearer ${doc.calKey || ""}`, "cal-api-version": CAL_VERSION, "Content-Type": "application/json" }
   });
   const data = await r.json().catch(() => ({}));
   if (r.status === 401 || r.status === 403) throw err(502, "Your booking calendar is not connected. Please contact DotCom support (support@arshees.com).");
   if (!r.ok) throw err(502, (data && data.error && data.error.message) || "Cal.com did not accept the request. Please try again.");
   return data;
 }
-async function bookings(env) {
+async function bookings(env, doc) {
   const [pend, up] = await Promise.all([
-    cal(env, "/bookings?status=unconfirmed&sortStart=asc&take=50"),
-    cal(env, "/bookings?status=upcoming&sortStart=asc&take=50")
+    cal(env, doc, "/bookings?status=unconfirmed&sortStart=asc&take=50"),
+    cal(env, doc, "/bookings?status=upcoming&sortStart=asc&take=50")
   ]);
   const list = d => (Array.isArray(d.data) ? d.data : []).map(slim);
   const pending = list(pend);
@@ -148,14 +169,14 @@ function slim(b) {
 }
 
 /* ---------- Daily host token ---------- */
-async function hostToken(env) {
-  const roomUrl = env.DAILY_ROOM_URL || "";
+async function hostToken(env, doc) {
+  const roomUrl = doc.roomUrl || "";
   const room = roomUrl.split("/").filter(Boolean).pop();
   if (!room) throw err(500, "Video room is not set up yet.");
   const r = await fetch("https://api.daily.co/v1/meeting-tokens", {
     method: "POST",
-    headers: { "Authorization": `Bearer ${env.DAILY_API_KEY}`, "Content-Type": "application/json" },
-    body: JSON.stringify({ properties: { room_name: room, is_owner: true, user_name: env.DOCTOR_NAME || "Doctor", exp: Math.floor(Date.now() / 1000) + 6 * 3600 } })
+    headers: { "Authorization": `Bearer ${doc.dailyKey || ""}`, "Content-Type": "application/json" },
+    body: JSON.stringify({ properties: { room_name: room, is_owner: true, user_name: doc.name, exp: Math.floor(Date.now() / 1000) + 6 * 3600 } })
   });
   const d = await r.json().catch(() => ({}));
   if (!r.ok || !d.token) throw err(502, "Could not open the video room. Please try again.");
@@ -163,7 +184,7 @@ async function hostToken(env) {
 }
 
 /* ---------- Cal.com webhook -> phone notification ---------- */
-async function calWebhook(req, env) {
+async function calWebhook(req, env, docId) {
   const raw = await req.text();
   const sig = (req.headers.get("x-cal-signature-256") || "").toLowerCase();
   const expect = await hmacHex(env.CAL_WEBHOOK_SECRET, raw);
@@ -173,12 +194,15 @@ async function calWebhook(req, env) {
   if (type === "PING") return json({ ok: true });
   const known = { BOOKING_REQUESTED: "request", BOOKING_CREATED: "created", BOOKING_CANCELLED: "cancelled", BOOKING_RESCHEDULED: "rescheduled" };
   if (!known[type]) return json({ ok: true, ignored: type });
-  await env.PUSH.put("lastEvent", JSON.stringify({ type: known[type], at: Date.now() }));
-  const sent = await pushAll(env);
+  const all = doctors(env);
+  const doc = all.length === 1 ? all[0] : all.find(d => d.id === docId);
+  if (!doc) return json({ error: "unknown doctor: add ?d=<doctor id> to this webhook link" }, 400);
+  await env.PUSH.put("lastEvent", JSON.stringify({ type: known[type], at: Date.now(), doctor: all.length > 1 ? doc.name : "" }));
+  const sent = await pushAll(env, subsKey(doc));
   return json({ ok: true, sent });
 }
-async function pushAll(env) {
-  const subs = (await env.PUSH.get("subs", "json")) || [];
+async function pushAll(env, key) {
+  const subs = (await env.PUSH.get(key, "json")) || [];
   if (!subs.length || !env.VAPID_PRIVATE_JWK) return 0;
   const keep = []; let sent = 0;
   for (const s of subs) {
@@ -189,7 +213,7 @@ async function pushAll(env) {
       keep.push(s);
     } catch (e) { keep.push(s); }
   }
-  await env.PUSH.put("subs", JSON.stringify(keep));
+  await env.PUSH.put(key, JSON.stringify(keep));
   return sent;
 }
 /* Web Push with no payload (no encryption needed). The service worker shows the message. */

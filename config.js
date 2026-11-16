@@ -102,6 +102,21 @@ window.SITE = {
     // Doctor joins at:   yoursite.com/consult.html?host=<owner token>   (keep this link private)
   },
 
+  /* ---------- Several doctors (optional) ----------
+     Leave this EMPTY for one doctor: the doctor, cal, payment and video settings above are used.
+     For 2+ doctors on one website, list EVERY doctor here (the first is usually the hero doctor above).
+     Each doctor has their OWN Cal.com and Daily (opened with their own Microsoft email).
+     Patients pick a doctor, then book that doctor's Cal.com. Video room: consult.html?d=<id>
+     (put that link as the "location" in each doctor's Cal.com events).
+     consultations / upiId / payeeName are optional: left out = the shared ones above. */
+  doctors: [
+    // { id: "sample", name: "Dr. Sample Name", photo: "doctor.jpg", title: "MBBS, MD · Consultant Physician",
+    //   languages: "English, Malayalam", bio: "Short line about the doctor.",
+    //   calUser: "sample-name-abc123", doctorEmail: "drsample@outlook.com",
+    //   roomUrl: "https://drsample.daily.co/consult", upiId: "sample@upi", payeeName: "Dr Sample Name" },
+    // { id: "second", name: "Dr. Second Doctor", photo: "doctor2.jpg", title: "BHMS · Homoeopathic Physician", ... }
+  ],
+
   /* ---------- Doctor dashboard helper (Standard package) ---------- */
   helper: {
     url: "https://dr-sample-helper.drmirshadck.workers.dev"   // the doctor's Cloudflare helper, e.g. "https://dr-sample-helper.dotcom.workers.dev"

@@ -1,6 +1,6 @@
 /* Service worker: lets the site install as an app and shows the doctor's booking notifications.
    Always loads the latest website from the internet; keeps a copy of the main pages for offline opening. */
-const CACHE = "doc-v2";
+const CACHE = "doc-v3";
 const CORE = ["./", "index.html", "doctor.html", "consult.html", "style.css", "app.js", "config.js", "qrcode.js", "doctor.jpg", "icons/icon-192.png"];
 
 self.addEventListener("install", e => { e.waitUntil(caches.open(CACHE).then(c => c.addAll(CORE)).catch(() => {})); self.skipWaiting(); });
@@ -28,12 +28,13 @@ async function helperUrl() {
 }
 self.addEventListener("push", e => {
   e.waitUntil((async () => {
-    let kind = "request";
+    let kind = "request", who = "";
     try {
       const h = await helperUrl();
-      if (h) { const r = await fetch(h.replace(/\/$/, "") + "/last-event", { cache: "no-store" }); const d = await r.json(); if (TEXT[d.type]) kind = d.type; }
+      if (h) { const r = await fetch(h.replace(/\/$/, "") + "/last-event", { cache: "no-store" }); const d = await r.json(); if (TEXT[d.type]) kind = d.type; who = d.doctor || ""; }
     } catch (err) {}
-    const [title, body] = TEXT[kind];
+    const [t0, body] = TEXT[kind];
+    const title = who ? t0 + " · " + who : t0;
     await self.registration.showNotification(title, { body, icon: "icons/icon-192.png", badge: "icons/icon-192.png", tag: "booking", renotify: true, data: { url: "doctor.html" } });
   })());
 });

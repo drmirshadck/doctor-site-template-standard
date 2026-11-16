@@ -66,13 +66,23 @@
 <div class="toast" id="toast"></div>
 <script>
 (function(){
-const S = window.SITE, D = S.doctor;
+const S = window.SITE;
+const DOCS = (S.doctors && S.doctors.length) ? S.doctors : null;   // several doctors: each logs in with their own PIN
+const meStore = { get(){ try { return JSON.parse(localStorage.getItem("docMe") || "null"); } catch(e){ return null; } }, set(v){ try { v ? localStorage.setItem("docMe", JSON.stringify(v)) : localStorage.removeItem("docMe"); } catch(e){} } };
+let me = meStore.get();
+const D = { name: S.doctor.name, photo: S.doctor.photo };
+function applyMe() {
+  const cfg = DOCS && me ? DOCS.find(d => d.id === me.id) : null;
+  D.name = (cfg && cfg.name) || (me && me.name && DOCS ? me.name : S.doctor.name);
+  D.photo = (cfg && cfg.photo) || S.doctor.photo;
+  $("dn").textContent = D.name; document.title = "Dashboard · " + D.name;
+}
 const API = ((S.helper && S.helper.url) || "").replace(/\/$/, "");
 const $ = id => document.getElementById(id);
 const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;" }[c]));
 const r = document.documentElement.style;
 r.setProperty("--brand", S.theme.brand); r.setProperty("--deep", S.theme.brandDeep); r.setProperty("--accent", S.theme.accent); r.setProperty("--light", S.theme.light);
-$("dn").textContent = D.name; document.title = "Dashboard · " + D.name;
+applyMe();
 if ("serviceWorker" in navigator) navigator.serviceWorker.register("sw.js").catch(() => {});
 
 const store = { get(){ try { return localStorage.getItem("docToken") || ""; } catch(e){ return ""; } }, set(v){ try { v ? localStorage.setItem("docToken", v) : localStorage.removeItem("docToken"); } catch(e){} } };
@@ -91,23 +101,25 @@ async function api(path, opts = {}) {
 /* ---------- login ---------- */
 function showLogin(msg) {
   $("hdrBtns").hidden = true;
-  $("main").innerHTML = `<form class="login" id="lf"><img src="${esc(D.photo)}" alt=""><h1>${esc(D.name)}</h1><p>Enter your PIN to see your bookings.</p>
+  const many = !!DOCS && !me;
+  $("main").innerHTML = `<form class="login" id="lf">${many ? "" : `<img src="${esc(D.photo)}" alt="">`}<h1>${esc(many ? (S.contact.clinicName || "Doctor login") : D.name)}</h1><p>${many ? "Doctors: enter your own PIN to see your bookings." : "Enter your PIN to see your bookings."}</p>
     <input class="pin" id="pin" type="password" inputmode="numeric" autocomplete="current-password" maxlength="8" aria-label="PIN" required>
     <button class="btn full" id="lb">Open dashboard</button><p class="err" id="le">${esc(msg || "")}</p></form>`;
   $("pin").focus();
   $("lf").onsubmit = async e => {
     e.preventDefault(); const b = $("lb"); b.disabled = true; $("le").textContent = "";
-    try { const d = await api("/login", { method: "POST", body: JSON.stringify({ pin: $("pin").value.trim() }) }); token = d.token; store.set(token); if (new URLSearchParams(location.search).get("next") === "room") return openRoom(); start(); }
+    try { const d = await api("/login", { method: "POST", body: JSON.stringify({ pin: $("pin").value.trim() }) }); token = d.token; store.set(token); me = d.doctor || null; meStore.set(me); applyMe(); if (new URLSearchParams(location.search).get("next") === "room") return openRoom(); start(); }
     catch (er) { $("le").textContent = er.message; b.disabled = false; $("pin").select(); }
   };
 }
-function logout(){ token = ""; store.set(""); clearInterval(timer); showLogin(); }
+function logout(){ token = ""; store.set(""); me = null; meStore.set(null); applyMe(); clearInterval(timer); showLogin(); }
 $("logout").onclick = logout;
 $("refresh").onclick = () => load(true);
 
 /* ---------- dashboard ---------- */
 const TZ = "Asia/Kolkata";
-const typeName = t => { const m = (S.consultations.types || []).find(x => x.calSlug === t || x.name === t); return m ? m.name : String(t).replace(/-/g, " ").replace(/^./, c => c.toUpperCase()); };
+const ALLTYPES = (S.consultations.types || []).concat(...(DOCS || []).map(d => d.consultations || []));
+const typeName = t => { const m = ALLTYPES.find(x => x.calSlug === t || x.name === t); return m ? m.name : String(t).replace(/-/g, " ").replace(/^./, c => c.toUpperCase()); };
 const day = d => new Date(d).toLocaleDateString("en-IN", { timeZone: TZ, weekday: "short", day: "numeric", month: "short" });
 const time = d => new Date(d).toLocaleTimeString("en-IN", { timeZone: TZ, hour: "numeric", minute: "2-digit" });
 const isToday = d => day(d) === day(Date.now());
@@ -143,7 +155,7 @@ function card(b) {
   const ref = upiRef(b.notes), ph = phoneDigits(b.phone);
   const other = b.notes.replace(/UPI ref:\s*\d{12}\s*(\(₹?\d+\))?/i, "").trim();
   const pend = tab === "pending";
-  const msg = `Hello ${b.name}, your consultation with ${D.name} is confirmed for ${day(b.start)} at ${time(b.start)} IST. Join here at that time: ${location.origin}${location.pathname.replace(/doctor\.html$/, "")}consult.html`;
+  const msg = `Hello ${b.name}, your consultation with ${D.name} is confirmed for ${day(b.start)} at ${time(b.start)} IST. Join here at that time: ${location.origin}${location.pathname.replace(/doctor\.html$/, "")}consult.html${roomQ()}`;
   return `<div class="card${!pend && isToday(b.start) ? " today" : ""}">
     <div class="top"><div><h3>${esc(b.name)}</h3><div class="meta"><span>${esc(typeName(b.title))}</span></div></div>
       <div class="when">${isToday(b.start) ? "Today" : esc(day(b.start))}<small>${esc(time(b.start))}</small></div></div>
@@ -172,14 +184,15 @@ function declineB(uid) {
     $("dYes").disabled = false;
   };
 }
+const roomQ = () => (DOCS && me && me.id && me.id !== "main") ? "?d=" + encodeURIComponent(me.id) : "";
 async function openRoom() {
   $("main").innerHTML = `<div class="empty">Opening the consultation room…</div>`;
-  try { const d = await api("/host-token", { method: "POST" }); location.href = "consult.html?host=" + encodeURIComponent(d.token); }
+  try { const d = await api("/host-token", { method: "POST" }); location.href = "consult.html" + (roomQ() ? roomQ() + "&" : "?") + "host=" + encodeURIComponent(d.token); }
   catch (e) { $("main").innerHTML = `<div class="empty">${esc(e.message)}</div>`; }
 }
 async function startCall(btn) {
   btn.disabled = true; btn.textContent = "Opening…";
-  try { const d = await api("/host-token", { method: "POST" }); location.href = "consult.html?host=" + encodeURIComponent(d.token); }
+  try { const d = await api("/host-token", { method: "POST" }); location.href = "consult.html" + (roomQ() ? roomQ() + "&" : "?") + "host=" + encodeURIComponent(d.token); }
   catch (e) { toast(e.message); btn.disabled = false; btn.textContent = "Start call"; }
 }
 

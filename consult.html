@@ -108,8 +108,12 @@
 
 <script src="https://unpkg.com/@daily-co/daily-js"></script>
 <script>
-  const S = window.SITE, D = S.doctor;
-  const ROOM_URL = (S.video.roomUrl || '').trim();
+  const S = window.SITE;
+  // several doctors: consult.html?d=<doctor id> opens that doctor's own room
+  const DOCS = S.doctors || [];
+  const DD = DOCS.find(d => d.id === new URLSearchParams(location.search).get('d')) || DOCS[0] || {};
+  const D = { name: DD.name || S.doctor.name, photo: DD.photo || S.doctor.photo };
+  const ROOM_URL = (DD.roomUrl || S.video.roomUrl || '').trim();
   const $ = id => document.getElementById(id);
   const r = document.documentElement.style;
   r.setProperty('--navy', S.theme.brandDeep); r.setProperty('--blue', S.theme.brand); r.setProperty('--sky', S.theme.light);
@@ -129,7 +133,7 @@
   const HELPER = ((S.helper && S.helper.url) || "").replace(/\/$/, "");
   if (!isHost && HELPER) {
     const q = document.createElement("a");
-    q.href = "doctor.html?next=room"; q.className = "quiet"; q.setAttribute("aria-label", "Clinic login"); q.textContent = "·";
+    q.href = "doctor.html?next=room" + (DD.id ? "&d=" + encodeURIComponent(DD.id) : ""); q.className = "quiet"; q.setAttribute("aria-label", "Clinic login"); q.textContent = "·";
     document.querySelector(".note").appendChild(q);
     if (docToken) {
       const b = document.createElement("button"); b.type = "button"; b.className = "btn"; b.style.marginTop = "12px"; b.style.background = "var(--blue)";
@@ -137,10 +141,10 @@
       b.onclick = async () => {
         b.disabled = true; b.textContent = "Opening…";
         try {
-          const r = await fetch(HELPER + "/host-token", { method: "POST", headers: { Authorization: "Bearer " + docToken } });
+          const r = await fetch(HELPER + "/host-token", { method: "POST", headers: { Authorization: "Bearer " + docToken, "Content-Type": "application/json" }, body: JSON.stringify({ doctor: DD.id || "" }) });
           const d = await r.json(); if (!r.ok || !d.token) throw new Error(d.error || "");
-          location.href = "consult.html?host=" + encodeURIComponent(d.token);
-        } catch (e) { location.href = "doctor.html?next=room"; }
+          location.href = "consult.html?" + (DD.id ? "d=" + encodeURIComponent(DD.id) + "&" : "") + "host=" + encodeURIComponent(d.token);
+        } catch (e) { location.href = "doctor.html?next=room" + (DD.id ? "&d=" + encodeURIComponent(DD.id) : ""); }
       };
       document.getElementById("joinForm").appendChild(b);
     }

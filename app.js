@@ -4,7 +4,12 @@
 const S = window.SITE;
 const $ = (q, el = document) => el.querySelector(q);
 const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
-const D = S.doctor, C = S.contact, IG = S.instagram, PAY = S.payment;
+const D = S.doctor, C = S.contact, IG = S.instagram;
+/* doctors: one doctor = the details above; 2+ doctors = SITE.doctors (each with their own Cal.com, Daily and UPI) */
+const BASEDOC = { id: "main", name: D.name, photo: D.photo, title: D.role, bio: "", languages: "", calUser: (S.cal && S.cal.username) || "", doctorEmail: (S.cal && S.cal.doctorEmail) || "", roomUrl: (S.video && S.video.roomUrl) || "", upiId: S.payment.upiId, payeeName: S.payment.payeeName, consultations: S.consultations.types };
+const DOCS = (S.doctors && S.doctors.length) ? S.doctors.map(d => Object.assign({}, BASEDOC, { bio: "", languages: "", calUser: "", doctorEmail: "", roomUrl: "" }, d, { consultations: (d.consultations && d.consultations.length) ? d.consultations : S.consultations.types })) : [BASEDOC];
+let DOC = DOCS[0];
+const PAY = () => ({ upiId: DOC.upiId || S.payment.upiId, payeeName: DOC.payeeName || S.payment.payeeName });
 
 /* ---------- theme + page meta ---------- */
 const root = document.documentElement.style;
@@ -30,10 +35,11 @@ const IGI = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke=
 const WAI = '<svg width="30" height="30" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M17.5 14.4c-.3-.1-1.8-.9-2-1-.3-.1-.5-.1-.7.1-.2.3-.8 1-.9 1.2-.2.2-.3.2-.6.1-.3-.1-1.3-.5-2.4-1.5-.9-.8-1.5-1.8-1.7-2.1-.2-.3 0-.5.1-.6l.4-.5c.1-.2.2-.3.3-.5.1-.2 0-.4 0-.5l-.9-2.2c-.2-.6-.5-.5-.7-.5h-.6c-.2 0-.5.1-.8.4-.3.3-1 1-1 2.5s1.1 2.9 1.2 3.1c.1.2 2.1 3.2 5.1 4.5.7.3 1.3.5 1.7.6.7.2 1.4.2 1.9.1.6-.1 1.8-.7 2-1.4.3-.7.3-1.3.2-1.4-.1-.1-.3-.2-.6-.3zM12 21.8c-1.8 0-3.5-.5-5-1.4l-.4-.2-3.7 1 1-3.6-.2-.4C2.7 15.6 2.2 13.8 2.2 12 2.2 6.6 6.6 2.2 12 2.2c2.6 0 5.1 1 6.9 2.9 1.8 1.8 2.9 4.3 2.9 6.9 0 5.4-4.4 9.8-9.8 9.8zm8.4-18.2C18.2 1.3 15.2 0 12 0 5.4 0 0 5.4 0 12c0 2.1.6 4.2 1.6 6L0 24l6.2-1.6c1.8 1 3.8 1.5 5.8 1.5 6.6 0 12-5.4 12-12 0-3.2-1.2-6.2-3.6-8.4z"/></svg>';
 const igUrl = IG && IG.handle ? `https://www.instagram.com/${IG.handle}/` : "";
 const wa = txt => `https://wa.me/${C.whatsapp}?text=${encodeURIComponent(txt)}`;
-const T = S.consultations.types;
+let T = DOC.consultations;
+const setDoc = id => { DOC = DOCS.find(d => d.id === id) || DOCS[0]; T = DOC.consultations; };
 
 /* ---------- page ---------- */
-const nav = [["about","About"],["experience","Experience"],["book","Consultations"]].concat(igUrl ? [["social","Instagram"]] : [], [["faq","FAQ"],["contact","Contact"]]);
+const nav = [["about","About"],["experience","Experience"]].concat(DOCS.length > 1 ? [["doctors","Doctors"]] : []).concat([["book","Consultations"]]).concat(igUrl ? [["social","Instagram"]] : [], [["faq","FAQ"],["contact","Contact"]]);
 $("#app").innerHTML = `
 <div class="navwrap"><div class="pill">
   <a class="brand" href="#top" aria-label="${esc(D.name)} home">${LOGO}<span><b>${esc(S.brand.title)}</b><small>${esc(S.brand.subtitle)}</small></span></a>
@@ -75,6 +81,10 @@ $("#app").innerHTML = `
   <div><div class="timeline">${S.experience.timeline.map(t => `<div class="tl rv"><span class="yr">${esc(t.year)}</span><div><b>${esc(t.title)}</b><p>${esc(t.text)}</p></div></div>`).join("")}</div></div>
 </div></section>
 
+${DOCS.length > 1 ? `<section id="doctors"><div class="wrap">
+  <div class="book-head rv"><div><p class="eyebrow">Our doctors</p><h2 style="margin-top:12px">Choose your doctor</h2><p>Every doctor consults privately by video on this website.</p></div></div>
+  <div class="docs">${DOCS.map(d => `<article class="doc-card rv"><img src="${esc(d.photo)}" alt="${esc(d.name)}" loading="lazy"><div><h3>${esc(d.name)}</h3><p class="dt">${esc(d.title)}</p>${d.languages ? `<p class="dl">Speaks ${esc(d.languages)}</p>` : ""}${d.bio ? `<p>${esc(d.bio)}</p>` : ""}<button class="btn btn-solid" data-book data-doc="${esc(d.id)}">Book with ${esc(d.name.replace(/^Dr\.?\s*/i, "Dr "))}</button></div></article>`).join("")}</div>
+</div></section>` : ""}
 <section id="book"><div class="wrap">
   <div class="book-head rv">
     <div><p class="eyebrow">Online consultations</p><h2 style="margin-top:12px">Book a video consultation</h2><p>Consult ${esc(D.shortName)} privately by video. ${esc(S.consultations.intro)}</p></div>
@@ -135,13 +145,14 @@ ${igUrl ? `<section class="insta" id="social"><div class="wrap insta-grid">
 let st = {};
 const ov = $("#ov"), box = $("#stepbox"), sheet = $(".sheet");
 const type = () => T.find(t => t.calSlug === st.type);
-const CALU = (S.cal && S.cal.username || "").trim();
-function openBook(slug) {
-  st = { step: 0, type: null, utr: "" };
+const CALU = () => (DOC.calUser || "").trim();
+function openBook(slug, docId) {
+  st = { step: 0, type: null, utr: "", doc: docId || "" };
+  if (docId) setDoc(docId); else if (DOCS.length > 1) st.step = -1; else setDoc(DOCS[0].id);
   if (slug && T.some(t => t.calSlug === slug)) { st.type = slug; st.step = type().fee > 0 ? 1 : 2; }
   ov.hidden = false; render();
 }
-document.querySelectorAll("[data-book]").forEach(b => b.addEventListener("click", () => openBook(b.dataset.book || null)));
+document.querySelectorAll("[data-book]").forEach(b => b.addEventListener("click", () => openBook(b.dataset.book || null, b.dataset.doc || (b.dataset.book ? DOCS[0].id : ""))));
 const closeSheet = () => { ov.hidden = true; document.body.style.overflow = ""; };
 $("#close").onclick = closeSheet;
 ov.addEventListener("click", e => { if (e.target === ov) closeSheet(); });
@@ -154,14 +165,14 @@ function copyFrom(btn, id) {
 }
 document.querySelectorAll("[data-copy]").forEach(b => b.onclick = () => copyFrom(b, b.dataset.copy));
 
-const upiLink = () => `upi://pay?pa=${encodeURIComponent(PAY.upiId)}&pn=${encodeURIComponent(PAY.payeeName)}&am=${type().fee.toFixed(2)}&cu=INR&tn=${encodeURIComponent(type().name)}`;
-function prog() { document.querySelectorAll(".prog i").forEach((i, k) => i.classList.toggle("on", k <= Math.min(st.step, 2))); }
+const upiLink = () => `upi://pay?pa=${encodeURIComponent(PAY().upiId)}&pn=${encodeURIComponent(PAY().payeeName)}&am=${type().fee.toFixed(2)}&cu=INR&tn=${encodeURIComponent(type().name)}`;
+function prog() { document.querySelectorAll(".prog i").forEach((i, k) => i.classList.toggle("on", k <= Math.min(Math.max(st.step, 0), 2))); }
 
 /* Cal.com official inline embed loader (same as Murshida site) */
 (function (C, A, L) { let p = function (a, ar) { a.q.push(ar); }; let d = C.document; C.Cal = C.Cal || function () { let cal = C.Cal; let ar = arguments; if (!cal.loaded) { cal.ns = {}; cal.q = cal.q || []; d.head.appendChild(d.createElement("script")).src = A; cal.loaded = true; } if (ar[0] === L) { const api = function () { p(api, arguments); }; const namespace = ar[1]; api.q = api.q || []; if (typeof namespace === "string") { cal.ns[namespace] = cal.ns[namespace] || api; p(cal.ns[namespace], ar); p(cal, ["initNamespace", namespace]); } else p(cal, ar); return; } p(cal, ar); }; })(window, "https://app.cal.com/embed/embed.js", "init");
 let calCount = 0, doneAt = 0;
 function findEmail(obj, depth) {
-  const own = (S.cal.doctorEmail || "").toLowerCase();
+  const own = (DOC.doctorEmail || "").toLowerCase();
   if (!obj || depth > 6) return "";
   if (typeof obj === "string") { const m = obj.match(/[\w.+-]+@[\w-]+(\.[\w-]+)+/); return m && m[0].toLowerCase() !== own ? m[0] : ""; }
   if (typeof obj !== "object") return "";
@@ -172,15 +183,21 @@ function findEmail(obj, depth) {
 function render() {
   prog(); sheet.classList.toggle("wide", st.step === 2);
   const t = type();
+  if (st.step === -1) {
+    box.innerHTML = `<p class="small">Choose your doctor.</p><div style="display:grid;gap:10px">${DOCS.map(d => `<button class="opt doc-opt" data-d="${esc(d.id)}"><img src="${esc(d.photo)}" alt=""><div><b>${esc(d.name)}</b><span>${esc(d.title)}</span></div></button>`).join("")}</div>`;
+    box.querySelectorAll("[data-d]").forEach(b => b.onclick = () => { setDoc(b.dataset.d); st.doc = DOC.id; st.step = 0; render(); });
+    return;
+  }
   if (st.step === 0) {
-    box.innerHTML = `<p class="small">Choose your consultation type.</p><div style="display:grid;gap:10px">${T.map(x => `<button class="opt" data-t="${esc(x.calSlug)}"><div><b>${esc(x.name)}</b><span>${x.inClinic ? "In person" : "Video call"} · ${esc(x.duration)}</span></div><span class="fee">${x.fee > 0 ? "₹" + x.fee : "Free"}</span></button>`).join("")}</div>`;
+    box.innerHTML = `${DOCS.length > 1 ? `<div class="summary"><div><span>Doctor</span><b>${esc(DOC.name)}</b></div></div>` : ""}<p class="small">Choose your consultation type.</p><div style="display:grid;gap:10px">${T.map(x => `<button class="opt" data-t="${esc(x.calSlug)}"><div><b>${esc(x.name)}</b><span>${x.inClinic ? "In person" : "Video call"} · ${esc(x.duration)}</span></div><span class="fee">${x.fee > 0 ? "₹" + x.fee : "Free"}</span></button>`).join("")}</div>`;
     box.querySelectorAll("[data-t]").forEach(b => b.onclick = () => { st.type = b.dataset.t; st.step = type().fee > 0 ? 1 : 2; render(); });
+    if (DOCS.length > 1) { const bk = document.createElement("div"); bk.className = "sheet-actions"; bk.innerHTML = `<button class="btn btn-ghost">Change doctor</button>`; bk.firstChild.onclick = () => { st.step = -1; render(); }; box.appendChild(bk); }
   } else if (st.step === 1) {
     box.innerHTML = `<div class="summary"><div><span>${esc(t.name)} (${esc(t.duration)})</span><b>₹${t.fee}</b></div></div>
       <div class="qr"><div id="qr" aria-label="UPI QR code"></div>
       <b>Scan to pay ₹${t.fee}</b>
       <a class="btn btn-solid paylink" href="${upiLink()}">Pay ₹${t.fee} with UPI app</a>
-      <div class="upi"><span>${esc(PAY.payeeName)}</span>·<span id="upi">${esc(PAY.upiId)}</span><button id="cu">Copy UPI ID</button></div>
+      <div class="upi"><span>${esc(PAY().payeeName)}</span>·<span id="upi">${esc(PAY().upiId)}</span><button id="cu">Copy UPI ID</button></div>
       <div class="apps"><span>Google Pay</span><span>PhonePe</span><span>Paytm</span><span>BHIM</span></div></div>
       <label class="f" for="utr">UPI transaction reference (optional, helps us verify faster)<input id="utr" inputmode="numeric" value="${esc(st.utr)}" placeholder="12-digit reference from your UPI app"></label>
       <p class="err" id="e"></p>
@@ -194,7 +211,7 @@ function render() {
       st.utr = u; st.step = 2; render();
     };
   } else if (st.step === 2) {
-    if (!CALU) {
+    if (!CALU()) {
       box.innerHTML = `<p>Online booking is being set up. Please message the clinic on WhatsApp to book your time.</p>
         <a class="btn btn-solid" target="_blank" rel="noopener" href="${wa(`Hi, I'd like to book a ${t.name} with ${D.name}.${st.utr ? " UPI ref: " + st.utr : ""}`)}">Message on WhatsApp</a>`;
       return;
@@ -208,7 +225,7 @@ function render() {
     const cfg = { layout: "month_view", theme: "light" };
     if (st.utr) cfg.notes = `UPI ref: ${st.utr} (₹${t.fee})`;
     Cal("init", ns, { origin: "https://app.cal.com" });
-    Cal.ns[ns]("inline", { elementOrSelector: "#calInline", calLink: `${CALU}/${t.calSlug}`, config: cfg });
+    Cal.ns[ns]("inline", { elementOrSelector: "#calInline", calLink: `${CALU()}/${t.calSlug}`, config: cfg });
     Cal.ns[ns]("ui", { theme: "light", hideEventTypeDetails: false, layout: "month_view", cssVarsPerTheme: { light: { "cal-brand": S.theme.brand } } });
     const onDone = e => showDone(e && e.detail && e.detail.data);
     Cal.ns[ns]("on", { action: "bookingSuccessfulV2", callback: onDone });
@@ -276,4 +293,6 @@ if ("serviceWorker" in navigator) addEventListener("load", () => navigator.servi
   const fb = $("#fabBook"), bk = $("#book"); if (!fb || !bk || !("IntersectionObserver" in window)) return;
   new IntersectionObserver(es => fb.classList.toggle("hide", es[0].isIntersecting), { threshold: .25 }).observe(bk);
 })();
+/* ---------- ?doctor=<id>#book opens booking for that doctor ---------- */
+(function () { const q = new URLSearchParams(location.search).get("doctor"); if (q && DOCS.length > 1 && DOCS.some(d => d.id === q)) addEventListener("load", () => setTimeout(() => openBook(null, q), 400)); })();
 })();
