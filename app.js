@@ -231,6 +231,30 @@ function render() {
     const onDone = e => showDone(e && e.detail && e.detail.data);
     Cal.ns[ns]("on", { action: "bookingSuccessfulV2", callback: onDone });
     Cal.ns[ns]("on", { action: "bookingSuccessful", callback: onDone });
+  } else if (st.t) {
+    // booked on DotCom's own calendar
+    const paid = t.fee > 0;
+    const when = `${fmt(st.start, { weekday: "long", day: "numeric", month: "long" })}, ${fmt(st.start, { hour: "numeric", minute: "2-digit" })}`;
+    const pend = st.bstatus === "pending";
+    const manage = `${location.origin}${location.pathname.replace(/[^/]*$/, "")}manage.html?d=${encodeURIComponent(DOC.id)}&b=${encodeURIComponent(st.uid)}&t=${encodeURIComponent(st.t)}`;
+    box.innerHTML = `<div class="done"><span class="tick"><svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M5 12l5 5L20 7"/></svg></span>
+      <h3>${pend ? "Booking request received!" : "Your appointment is booked!"}</h3>
+      <div class="summary"><div><span>${esc(st.btitle || "Consultation")}${DOCS.length > 1 ? " · " + esc(DOC.name) : ""}</span><b>${esc(when)}</b></div></div>
+      <p style="color:var(--muted)">${pend ? (paid ? "The clinic will check your UPI payment and confirm your appointment." : "The clinic will confirm your appointment.") + (st.emails ? " You'll get an email at <b>" + esc(st.email) + "</b>." : " You'll get a message on WhatsApp.") : (st.emails ? "Details are sent to <b>" + esc(st.email) + "</b>." : "")} At your time, join from this website's <b>Consultation room</b>.</p>
+      <div class="sheet-actions" style="flex-wrap:wrap"><button class="btn btn-ghost" id="ics">Add to my calendar</button><a class="btn btn-ghost" href="${esc(manage)}" id="mg">Change or cancel</a></div>
+      <p class="small">Keep the <b>Change or cancel</b> link — <a href="#" id="cp">copy link</a>.</p>
+      <button class="btn btn-solid" id="ok">Close</button></div>`;
+    $("#ok", box).onclick = closeSheet;
+    $("#cp", box).onclick = e => { e.preventDefault(); (navigator.clipboard ? navigator.clipboard.writeText(manage) : Promise.reject()).then(() => e.target.textContent = "copied ✓").catch(() => prompt("Copy this link:", manage)); };
+    $("#ics", box).onclick = () => {
+      const z = d => new Date(d).toISOString().replace(/[-:]/g, "").replace(/\.\d{3}/, "");
+      const end = st.bend || new Date(Date.parse(st.start) + 30 * 6e4).toISOString();
+      const room = `${location.origin}${location.pathname.replace(/[^/]*$/, "")}consult.html${DOC.id !== "main" ? "?d=" + encodeURIComponent(DOC.id) : ""}`;
+      const ics = ["BEGIN:VCALENDAR", "VERSION:2.0", "PRODID:-//DotCom by Arshees//Booking//EN", "BEGIN:VEVENT", `UID:${st.uid}@dotcom`, `DTSTAMP:${z(Date.now())}`, `DTSTART:${z(st.start)}`, `DTEND:${z(end)}`,
+        `SUMMARY:${((st.btitle || "Consultation") + " - " + DOC.name).replace(/[,;]/g, " ")}`, `DESCRIPTION:Join at ${room}\\nChange or cancel: ${manage}`, `URL:${room}`,
+        "BEGIN:VALARM", "TRIGGER:-PT30M", "ACTION:DISPLAY", "DESCRIPTION:Consultation in 30 minutes", "END:VALARM", "END:VEVENT", "END:VCALENDAR"].join("\r\n");
+      const a = document.createElement("a"); a.href = URL.createObjectURL(new Blob([ics], { type: "text/calendar" })); a.download = "appointment.ics"; document.body.appendChild(a); a.click(); a.remove();
+    };
   } else {
     const paid = t.fee > 0;
     box.innerHTML = `<div class="done"><span class="tick"><svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M5 12l5 5L20 7"/></svg></span>
@@ -243,9 +267,9 @@ function render() {
   }
 }
 /* ---------- own booking screen (no Cal.com window) ----------
-   The helper fetches free times from the doctor's Cal.com and books there behind the scenes,
-   so Cal.com still sends the emails and fires the dashboard / alerts. If the helper can't be
-   reached, the old Cal.com calendar is shown instead (st.embed). */
+   Free times come from the helper: DotCom's own calendar (CALENDAR = "own") or, on older setups,
+   the doctor's Cal.com behind the scenes. If the helper can't be reached, the old Cal.com calendar
+   (or a WhatsApp message) is shown instead (st.embed). */
 const HELP = () => ((S.helper && S.helper.url) || "").replace(/\/$/, "");
 const TZ = (() => { try { const z = Intl.DateTimeFormat().resolvedOptions().timeZone || "Asia/Kolkata"; return z === "Asia/Calcutta" ? "Asia/Kolkata" : z; } catch (e) { return "Asia/Kolkata"; } })();
 const ymd = d => new Date(d.getTime() - d.getTimezoneOffset() * 6e4).toISOString().slice(0, 10);
@@ -337,7 +361,8 @@ function ownForm(t, paidLine) {
       const d = await r.json().catch(() => ({}));
       if (r.status === 409) { st.msg = d.error || "That time was just taken. Please choose another."; st.sub = ""; st.slots = null; render(); return; }
       if (!r.ok || !d.uid) throw new Error(d.error || "The booking could not be saved. Please try again.");
-      st.email = d.email || f.email; st.uid = d.uid; st.form = null; st.sub = ""; st.slots = null; st.step = 3; render();
+      st.email = d.email || f.email; st.uid = d.uid; st.t = d.t || ""; st.start = d.start || st.time; st.bend = d.end || ""; st.bstatus = d.status; st.emails = !!d.emails; st.btitle = t.name;
+      st.form = null; st.sub = ""; st.slots = null; st.step = 3; render();
     } catch (x) { e.textContent = x.message; go.disabled = false; go.textContent = "Confirm booking"; }
   };
 }

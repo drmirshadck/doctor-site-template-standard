@@ -1,7 +1,13 @@
 /* DotCom by Arshees — doctor helper (Cloudflare Worker), Standard package.
  *
  * Keeps the doctor's Cal.com and Daily keys secret and powers doctor.html:
- *   GET  /book/info, /book/slots, POST /book/create -> own booking screen on the website (see book.js)
+ *   GET  /book/info, /book/slots, POST /book/create -> own booking screen on the website
+ *
+ * CALENDAR (var):  "own" = DotCom's own calendar (calendar.js + own.js): no Cal.com, no accounts for the doctor,
+ *                  bookings kept in a Durable Object per doctor, patient details encrypted with secret DATA_KEY,
+ *                  deleted RETAIN_DAYS after the appointment (default 365). Timetable: SCHEDULE_JSON (or "schedule"
+ *                  in each DOCTORS_JSON entry) as the starting point; the doctor edits it in the dashboard.
+ *                  anything else (default) = Cal.com as before (book.js).
  *   POST /login         {pin}            -> {token}
  *   GET  /bookings      (auth)           -> {pending:[], upcoming:[]}
  *   POST /confirm       (auth) {uid}
@@ -31,6 +37,8 @@
  * The only stored items are the doctor's push subscriptions and the type/time of the last event.
  */
 import { bookRoute, isBookPath } from "./book.js";
+import { isOwnPublic, isOwnDoctor, ownPublic, ownDoctor } from "./own.js";
+export { Calendar } from "./calendar.js";   // OWN CALENDAR (Durable Object, one per doctor)
 
 const CAL = "https://api.cal.com/v2";
 const CAL_VERSION = "2024-08-13";
@@ -65,9 +73,12 @@ async function route(req, env, url, fromSite) {
   // everything below is for the doctor's own website only
   if (!fromSite) throw err(403, "Not allowed.");
   if (p === "/login" && M === "POST") return login(req, env);
-  if (isBookPath(p)) return bookRoute(req, url, p, async id => { const d = doctors(env).find(x => x.id === id) || (doctors(env).length === 1 ? doctors(env)[0] : null); return d && d.calKey ? { key: d.calKey, username: "" } : null; }, env.PUSH);
+  const own = env.CALENDAR === "own";
+  if (own && isOwnPublic(p)) return ownPublic(req, env, url, p, doctors(env), hooks(env));
+  if (!own && isBookPath(p)) return bookRoute(req, url, p, async id => { const d = doctors(env).find(x => x.id === id) || (doctors(env).length === 1 ? doctors(env)[0] : null); return d && d.calKey ? { key: d.calKey, username: "" } : null; }, env.PUSH);
 
   const doc = await requireSession(req, env);
+  if (own && isOwnDoctor(p)) return ownDoctor(req, env, url, p, doc, hooks(env));
   if (p === "/bookings" && M === "GET") return bookings(env, doc);
   if (p === "/confirm" && M === "POST") {
     const { uid } = await body(req);
@@ -101,9 +112,22 @@ function doctors(env) {
     return [{ id: "main", name: env.DOCTOR_NAME || "Doctor", roomUrl: env.DAILY_ROOM_URL || "", calKey: env.CAL_API_KEY, dailyKey: env.DAILY_API_KEY, pinHash: env.PIN_HASH }];
   }
   const pins = jmap(env, "PINS"), cals = jmap(env, "CAL_KEYS"), dailies = jmap(env, "DAILY_KEYS");
-  return list.filter(d => d && /^[a-z0-9-]{1,40}$/i.test(d.id || "")).map(d => ({ id: d.id, name: d.name || "Doctor", roomUrl: d.roomUrl || "", calKey: cals[d.id], dailyKey: dailies[d.id], pinHash: pins[d.id] }));
+  return list.filter(d => d && /^[a-z0-9-]{1,40}$/i.test(d.id || "")).map(d => ({ id: d.id, name: d.name || "Doctor", roomUrl: d.roomUrl || "", calKey: cals[d.id], dailyKey: dailies[d.id], pinHash: pins[d.id], schedule: d.schedule }));
 }
 const subsKey = d => d.id === "main" ? "subs" : "subs:" + d.id;
+
+/* ---------- own calendar: phone alert to the doctor (no patient details in the alert) ---------- */
+function hooks(env) {
+  const alert = async (doc, type) => {
+    const many = doctors(env).length > 1;
+    await env.PUSH.put("lastEvent", JSON.stringify({ type, at: Date.now(), doctor: many ? doc.name : "" }));
+    await pushAll(env, subsKey(doc));
+  };
+  return {
+    onNew: (doc, b) => alert(doc, b.status === "pending" ? "request" : "created"),
+    onChange: (doc, b, what) => /patient/.test(what) ? alert(doc, /cancel/.test(what) ? "cancelled" : "rescheduled") : null
+  };
+}
 
 /* ---------- auth ---------- */
 async function login(req, env) {

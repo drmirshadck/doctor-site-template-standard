@@ -24,6 +24,7 @@ else out.PIN_HASH = await hashPin(pairs[0][1]);
 Object.assign(out, {
 
   SESSION_SECRET: rand(32),
+  DATA_KEY: rand(32),   // own calendar: encrypts patient details. Keep a copy in Studio Desk; never change it once bookings exist.
   CAL_WEBHOOK_SECRET: rand(24),
   VAPID_PUBLIC_KEY: b64u(pub),
   VAPID_PRIVATE_JWK: JSON.stringify({ kty: jwk.kty, crv: jwk.crv, x: jwk.x, y: jwk.y, d: jwk.d })

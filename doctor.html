@@ -57,6 +57,24 @@
   dialog::backdrop{background:rgba(0,0,0,.4)}
   dialog h3{font:700 19px Outfit;color:var(--deep);margin-bottom:8px}
   dialog textarea{width:100%;min-height:80px;border:1.5px solid var(--line);border-radius:12px;padding:10px;font:inherit;margin:10px 0}
+  .tt h3{font:700 16px Outfit,system-ui,sans-serif;color:var(--deep);margin:4px 0 10px}
+  .dayrow{display:grid;grid-template-columns:minmax(0,1fr);gap:6px;align-items:start;padding:10px 0;border-top:1px solid var(--line)}
+  .dayrow:first-of-type{border-top:0}
+  .dayrow b{font-size:14px}
+  .wins{display:grid;gap:6px}
+  .win{display:flex;gap:6px;align-items:center;flex-wrap:nowrap}
+  .win input[type=time]{flex:1 1 0;min-width:0;width:auto;font-size:14px;padding:7px 4px}
+  .win span{flex:none;font-size:13px;color:var(--muted)}
+  .win .x{flex:none}
+  .win input[type=time],.tt input[type=date],.tt input[type=number],.tt input[type=text]{font:inherit;border:1.5px solid var(--line);border-radius:10px;padding:7px 8px;background:#fff}
+  .tt input[type=number]{width:80px}
+  .x{border:0;background:#fdeceb;color:#b3261e;border-radius:10px;padding:7px 10px;font-weight:700}
+  .add{border:1.5px dashed var(--line);background:#fff;color:var(--deep);border-radius:10px;padding:6px 10px;font-weight:700;justify-self:start}
+  .closed{color:var(--muted);font-size:14px;padding-top:8px}
+  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+  .grid2 label{font-size:13.5px;color:var(--muted);display:grid;gap:4px}
+  .leave{display:flex;gap:8px;align-items:center;justify-content:space-between;padding:8px 0;border-top:1px solid var(--line)}
+  .save{position:sticky;bottom:calc(10px + env(safe-area-inset-bottom));box-shadow:0 10px 30px -12px rgba(0,0,0,.4)}
 </style>
 </head>
 <body>
@@ -142,17 +160,20 @@ function render() {
     <div class="tabs" role="tablist">
       <button class="tab" role="tab" data-t="pending" aria-selected="${tab === "pending"}">Requests${p ? `<span class="n">${p}</span>` : ""}</button>
       <button class="tab" role="tab" data-t="upcoming" aria-selected="${tab === "upcoming"}">Upcoming${u ? `<span class="n">${u}</span>` : ""}</button>
+      ${data.own ? `<button class="tab" role="tab" data-t="timetable" aria-selected="${tab === "timetable"}">Timetable</button>` : ""}
     </div>
-    ${list.length ? list.map(card).join("") : `<div class="empty">${tab === "pending" ? "No new requests. You'll be notified when a patient books." : "No upcoming consultations."}</div>`}
+    ${tab === "timetable" ? `<div id="tt" class="tt"><div class="empty">Loading timetable…</div></div>` : list.length ? list.map(card).join("") : `<div class="empty">${tab === "pending" ? "No new requests. You'll be notified when a patient books." : "No upcoming consultations."}</div>`}
     <p class="note" style="text-align:center;margin-top:10px">Times are in India time (IST). Updates every minute.</p>`;
   document.querySelectorAll("[data-t]").forEach(b => b.onclick = () => { tab = b.dataset.t; render(); });
   document.querySelectorAll("[data-ok]").forEach(b => b.onclick = () => confirmB(b));
   document.querySelectorAll("[data-no]").forEach(b => b.onclick = () => declineB(b.dataset.no));
   document.querySelectorAll("[data-call]").forEach(b => b.onclick = () => startCall(b));
+  document.querySelectorAll("[data-cx]").forEach(b => b.onclick = () => declineB(b.dataset.cx, true));
   if ($("nb")) $("nb").onclick = enablePush;
+  if (tab === "timetable") loadTT();
 }
 function card(b) {
-  const ref = upiRef(b.notes), ph = phoneDigits(b.phone);
+  const ref = b.utr || upiRef(b.notes), ph = phoneDigits(b.phone);
   const other = b.notes.replace(/UPI ref:\s*\d{12}\s*(\(₹?\d+\))?/i, "").trim();
   const pend = tab === "pending";
   const msg = `Hello ${b.name}, your consultation with ${D.name} is confirmed for ${day(b.start)} at ${time(b.start)} IST. Join here at that time: ${location.origin}${location.pathname.replace(/doctor\.html$/, "")}consult.html${roomQ()}`;
@@ -166,20 +187,30 @@ function card(b) {
     </div>
     <div class="acts">${pend
       ? `<button class="btn no" data-no="${esc(b.uid)}">Decline</button><button class="btn ok" data-ok="${esc(b.uid)}" data-name="${esc(b.name)}">Confirm</button>`
-      : `${ph ? `<a class="btn wa" href="https://wa.me/${ph}?text=${encodeURIComponent(msg)}" target="_blank" rel="noopener">Send link</a>` : ""}<button class="btn" data-call="1">Start call</button>`}</div>
+      : `${ph ? `<a class="btn wa" href="https://wa.me/${ph}?text=${encodeURIComponent(msg)}" target="_blank" rel="noopener">Send link</a>` : ""}<button class="btn" data-call="1">Start call</button>${data.own ? `<button class="btn no" data-cx="${esc(b.uid)}">Cancel</button>` : ""}`}</div>
   </div>`;
 }
 async function confirmB(btn) {
   btn.disabled = true;
-  try { await api("/confirm", { method: "POST", body: JSON.stringify({ uid: btn.dataset.ok }) }); toast(`Confirmed. ${btn.dataset.name} gets an email.`); await load(); }
+  try { await api("/confirm", { method: "POST", body: JSON.stringify({ uid: btn.dataset.ok }) }); toast(data.own && !data.emails ? `Confirmed. Tap "Send link" to tell ${btn.dataset.name} on WhatsApp.` : `Confirmed. ${btn.dataset.name} gets an email.`); tab = data.own && !data.emails ? "upcoming" : tab; await load(); }
   catch (e) { toast(e.message); btn.disabled = false; }
 }
-function declineB(uid) {
-  const dlg = $("dlg"); dlg.showModal();
+function declineB(uid, cancel) {
+  const dlg = $("dlg"); const b = [...data.pending, ...data.upcoming].find(x => x.uid === uid) || {};
+  dlg.querySelector("h3").textContent = cancel ? "Cancel this consultation?" : "Decline this booking?";
+  dlg.querySelector(".note").textContent = data.own && !data.emails ? "After this, WhatsApp opens so you can tell the patient. If they already paid, refund them by UPI." : "The patient gets an email. If they already paid, refund them by UPI.";
+  $("dYes").textContent = cancel ? "Cancel consultation" : "Decline";
+  dlg.showModal();
   $("dNo").onclick = () => dlg.close();
   $("dYes").onclick = async () => {
     $("dYes").disabled = true;
-    try { await api("/decline", { method: "POST", body: JSON.stringify({ uid, reason: $("reason").value }) }); dlg.close(); toast("Declined. The patient gets an email."); await load(); }
+    try {
+      const reason = $("reason").value;
+      await api(cancel ? "/cancel-booking" : "/decline", { method: "POST", body: JSON.stringify({ uid, reason }) }); dlg.close();
+      const ph = phoneDigits(b.phone || "");
+      if (data.own && !data.emails && ph) window.open(`https://wa.me/${ph}?text=${encodeURIComponent(`Hello ${b.name}, sorry — your ${cancel ? "consultation" : "booking request"} with ${D.name} on ${day(b.start)} at ${time(b.start)} IST is ${cancel ? "cancelled" : "not possible"}. ${reason} You can book another time at ${location.origin}${location.pathname.replace(/doctor\.html$/, "")}`)}`, "_blank");
+      toast(cancel ? "Cancelled." : "Declined."); await load();
+    }
     catch (e) { toast(e.message); }
     $("dYes").disabled = false;
   };
@@ -194,6 +225,74 @@ async function startCall(btn) {
   btn.disabled = true; btn.textContent = "Opening…";
   try { const d = await api("/host-token", { method: "POST" }); location.href = "consult.html" + (roomQ() ? roomQ() + "&" : "?") + "host=" + encodeURIComponent(d.token); }
   catch (e) { toast(e.message); btn.disabled = false; btn.textContent = "Start call"; }
+}
+
+/* ---------- timetable (own calendar) ---------- */
+const DAYS = [["1","Mon"],["2","Tue"],["3","Wed"],["4","Thu"],["5","Fri"],["6","Sat"],["0","Sun"]];
+let sched = null;
+async function loadTT() {
+  try { if (!sched) sched = (await api("/schedule")).schedule; drawTT(); }
+  catch (e) { $("tt").innerHTML = `<div class="empty">${esc(e.message)}</div>`; }
+}
+function drawTT() {
+  const s = sched, wk = s.week || {};
+  const today = new Date().toLocaleDateString("en-CA", { timeZone: TZ });
+  const leave = (s.leave || []).filter(l => (l.to || l.from) >= today);
+  const thisMonth = today.slice(0, 7), lastMonth = (() => { const d = new Date(today + "T12:00:00Z"); d.setUTCMonth(d.getUTCMonth() - 1); return d.toISOString().slice(0, 7); })();
+  $("tt").innerHTML = `
+    <div class="card"><h3>Working hours</h3>
+      ${DAYS.map(([k, n]) => `<div class="dayrow"><b>${n}</b><div class="wins">
+        ${(wk[k] || []).map((w, i) => `<div class="win"><input type="time" value="${w[0]}" data-d="${k}" data-i="${i}" data-e="0" aria-label="${n} from"><span>to</span><input type="time" value="${w[1]}" data-d="${k}" data-i="${i}" data-e="1" aria-label="${n} until"><button class="x" data-del="${k}:${i}" aria-label="Remove">✕</button></div>`).join("") || `<span class="closed">Closed</span>`}
+        <button class="add" data-add="${k}">+ Add hours</button></div></div>`).join("")}
+    </div>
+    <div class="card"><h3>Booking rules</h3><div class="grid2">
+      <label>Gap between patients (min)<input type="number" min="0" max="120" id="gap" value="${s.gap ?? 10}"></label>
+      <label>Earliest booking (hours from now)<input type="number" min="0" max="168" id="notice" value="${s.notice ?? 3}"></label>
+      <label>Book up to (days ahead)<input type="number" min="1" max="180" id="ahead" value="${s.ahead ?? 30}"></label>
+      <label>Max patients a day (0 = no limit)<input type="number" min="0" max="200" id="maxPerDay" value="${s.maxPerDay ?? 0}"></label>
+    </div></div>
+    <div class="card"><h3>Leave / days off</h3>
+      ${leave.length ? leave.map(l => `<div class="leave"><span><b>${esc(l.from === l.to ? fmtD(l.from) : fmtD(l.from) + " – " + fmtD(l.to))}</b>${l.note ? " · " + esc(l.note) : ""}</span><button class="x" data-lv="${esc(l.from)}|${esc(l.to)}">✕</button></div>`).join("") : `<p class="note">No leave added.</p>`}
+      <div class="grid2" style="margin-top:10px"><label>From<input type="date" id="lf" min="${today}"></label><label>To (optional)<input type="date" id="lt" min="${today}"></label></div>
+      <label class="note" style="display:grid;gap:4px;margin-top:8px">Note (only you see it)<input type="text" id="ln" maxlength="80" placeholder="e.g. Conference"></label>
+      <button class="btn ghost" id="addLeave" style="margin-top:10px">Add leave</button>
+      <p class="note" style="margin-top:8px">Bookings already made on these days stay — cancel them from Upcoming if needed.</p>
+    </div>
+    <div class="card"><h3>Download bookings</h3><p class="note">A list of your patients' bookings for the month (opens in Excel). Keep it as your record — old bookings are removed from DotCom automatically after a year.</p>
+      <div class="acts"><button class="btn ghost" data-exp="${lastMonth}">${monthName(lastMonth)}</button><button class="btn ghost" data-exp="${thisMonth}">${monthName(thisMonth)}</button></div></div>
+    <button class="btn full save" id="saveTT">Save timetable</button>`;
+  const tt = $("tt");
+  tt.querySelectorAll("input[type=time]").forEach(i => i.onchange = () => { wk[i.dataset.d][+i.dataset.i][+i.dataset.e] = i.value; });
+  tt.querySelectorAll("[data-del]").forEach(b => b.onclick = () => { const [d, i] = b.dataset.del.split(":"); wk[d].splice(+i, 1); drawTT(); });
+  tt.querySelectorAll("[data-add]").forEach(b => b.onclick = () => { const d = b.dataset.add; (wk[d] = wk[d] || []).push((wk[d] || []).length ? ["17:00", "20:00"] : ["10:00", "13:00"]); drawTT(); });
+  tt.querySelectorAll("[data-lv]").forEach(b => b.onclick = () => { const [f, t] = b.dataset.lv.split("|"); s.leave = (s.leave || []).filter(l => !(l.from === f && (l.to || l.from) === t)); drawTT(); });
+  tt.querySelectorAll("[data-exp]").forEach(b => b.onclick = () => exportMonth(b.dataset.exp, b));
+  $("addLeave").onclick = () => {
+    const f = $("lf").value, t = $("lt").value || f;
+    if (!f) return toast("Choose the first day of leave.");
+    if (t < f) return toast("The last day can't be before the first.");
+    (s.leave = s.leave || []).push({ from: f, to: t, note: $("ln").value.trim() }); drawTT(); toast("Added — tap Save timetable.");
+  };
+  $("saveTT").onclick = async () => {
+    for (const [k, n] of DAYS) for (const w of wk[k] || []) if (!w[0] || !w[1] || w[0] >= w[1]) return toast(`${n}: the end time must be after the start time.`);
+    const btn = $("saveTT"); btn.disabled = true; btn.textContent = "Saving…";
+    try {
+      const body = { week: wk, leave: s.leave || [], gap: +$("gap").value, notice: +$("notice").value, ahead: +$("ahead").value, maxPerDay: +$("maxPerDay").value };
+      sched = (await api("/schedule", { method: "POST", body: JSON.stringify({ schedule: body }) })).schedule; drawTT(); toast("Timetable saved. Patients see the new times now.");
+    } catch (e) { toast(e.message); btn.disabled = false; btn.textContent = "Save timetable"; }
+  };
+}
+const fmtD = d => new Date(d + "T12:00:00Z").toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" });
+const monthName = m => new Date(m + "-15T12:00:00Z").toLocaleDateString("en-IN", { month: "long", year: "numeric" });
+async function exportMonth(m, btn) {
+  btn.disabled = true;
+  try {
+    const res = await fetch(API + "/export?month=" + m, { headers: { Authorization: "Bearer " + token } });
+    if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || "Could not download.");
+    const url = URL.createObjectURL(await res.blob()); const a = document.createElement("a");
+    a.href = url; a.download = `${D.name.replace(/[^\w]+/g, "-")}-bookings-${m}.csv`; document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(url), 5000);
+  } catch (e) { toast(e.message); }
+  btn.disabled = false;
 }
 
 /* ---------- phone notifications ---------- */

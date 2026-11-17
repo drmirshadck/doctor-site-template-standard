@@ -9,8 +9,23 @@ DOCTOR_NAME = "Dr. Sample Name"
 DAILY_ROOM_URL = ""                       # e.g. https://drsample.daily.co/consult
 ALLOWED_ORIGINS = "https://drmirshadck.github.io"   # the doctor's site, e.g. https://drsample.com,https://www.drsample.com
 VAPID_SUBJECT = "mailto:support@arshees.com"
+# OWN CALENDAR (no Cal.com): "own". Leave out or "cal" = Cal.com as before.
+CALENDAR = "own"
+TIMEZONE = "Asia/Kolkata"
+RETAIN_DAYS = "365"          # bookings are deleted this many days after the appointment
+CHANGE_CUTOFF_HOURS = "2"    # patients can cancel / change time online until this many hours before
+# Starting timetable (the doctor changes it later in the dashboard). Type slugs = calSlug in config.js.
+SCHEDULE_JSON = '''{"week":{"1":[["10:00","13:00"],["17:00","20:00"]],"2":[["10:00","13:00"],["17:00","20:00"]],"3":[["10:00","13:00"],["17:00","20:00"]],"4":[["10:00","13:00"],["17:00","20:00"]],"5":[["10:00","13:00"],["17:00","20:00"]],"6":[["10:00","13:00"]],"0":[]},"gap":10,"notice":3,"ahead":30,"types":{"online-video-consultation":{"name":"New consultation","length":30,"confirm":true},"review-consultation":{"name":"Review consultation","length":20,"confirm":true},"clinic-visit":{"name":"Clinic visit","length":15,"confirm":true}}}'''
 # Several doctors on one website: list them here (then DOCTOR_NAME / DAILY_ROOM_URL are ignored)
 # DOCTORS_JSON = '''[{"id":"anish","name":"Dr. Anish Mohan","roomUrl":"https://dranish.daily.co/consult"},{"id":"second","name":"Dr. Second","roomUrl":"https://drsecond.daily.co/consult"}]'''
+
+[[durable_objects.bindings]]
+name = "CALS"
+class_name = "Calendar"
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["Calendar"]
 
 [[kv_namespaces]]
 binding = "PUSH"
@@ -20,3 +35,4 @@ id = "a399c94d216b43aea26f0aca5db8df5a"   # sample doctor; each doctor gets thei
 #   one doctor:  CAL_API_KEY, DAILY_API_KEY, PIN_HASH          -> node make-secrets.mjs <PIN>
 #   several:     CAL_KEYS {"id":"key"}, DAILY_KEYS {"id":"key"}, PINS -> node make-secrets.mjs anish=<PIN> second=<PIN>
 #   always:      SESSION_SECRET, CAL_WEBHOOK_SECRET, VAPID_PUBLIC_KEY, VAPID_PRIVATE_JWK
+#   own calendar: DATA_KEY (encrypts patient details; never change it once bookings exist)
