@@ -211,7 +211,6 @@ function render() {
       st.utr = u; st.step = 2; render();
     };
   } else if (st.step === 2) {
-    if (HELP() && !st.embed) { ownBooking(t); return; }
     if (!CALU()) {
       box.innerHTML = `<p>Online booking is being set up. Please message the clinic on WhatsApp to book your time.</p>
         <a class="btn btn-solid" target="_blank" rel="noopener" href="${wa(`Hi, I'd like to book a ${t.name} with ${D.name}.${st.utr ? " UPI ref: " + st.utr : ""}`)}">Message on WhatsApp</a>`;
@@ -221,7 +220,7 @@ function render() {
       <p class="small">Choose your date and time. Please enter your WhatsApp number so we can send your consultation link.</p>
       <div id="calInline" style="min-height:520px"></div>
       <div class="sheet-actions"><button class="btn btn-ghost" id="back">Back</button></div>`;
-    $("#back", box).onclick = () => { st.embed = false; st.step = t.fee > 0 ? 1 : 0; render(); };
+    $("#back", box).onclick = () => { st.step = t.fee > 0 ? 1 : 0; render(); };
     const ns = "b" + (++calCount);
     const cfg = { layout: "month_view", theme: "light" };
     if (st.utr) cfg.notes = `UPI ref: ${st.utr} (₹${t.fee})`;
@@ -241,105 +240,6 @@ function render() {
       <button class="btn btn-solid" id="ok">Close</button></div>`;
     $("#ok", box).onclick = closeSheet;
   }
-}
-/* ---------- own booking screen (no Cal.com window) ----------
-   The helper fetches free times from the doctor's Cal.com and books there behind the scenes,
-   so Cal.com still sends the emails and fires the dashboard / alerts. If the helper can't be
-   reached, the old Cal.com calendar is shown instead (st.embed). */
-const HELP = () => ((S.helper && S.helper.url) || "").replace(/\/$/, "");
-const TZ = (() => { try { const z = Intl.DateTimeFormat().resolvedOptions().timeZone || "Asia/Kolkata"; return z === "Asia/Calcutta" ? "Asia/Kolkata" : z; } catch (e) { return "Asia/Kolkata"; } })();
-const ymd = d => new Date(d.getTime() - d.getTimezoneOffset() * 6e4).toISOString().slice(0, 10);
-const fmt = (iso, o) => { try { return new Intl.DateTimeFormat("en-IN", Object.assign({ timeZone: TZ }, o)).format(new Date(iso)); } catch (e) { return iso; } };
-async function helperGet(path) {
-  const r = await fetch(HELP() + path); const d = await r.json().catch(() => ({}));
-  if (!r.ok) { const e = new Error(d.error || "Could not load times."); e.status = r.status; throw e; } return d;
-}
-function useEmbed() { st.embed = true; st.sub = ""; render(); }
-async function loadSlots(t, more) {
-  const q = new URLSearchParams({ d: DOC.id, slug: t.calSlug, tz: TZ });
-  const from = more && st.until ? st.until : ymd(new Date());
-  q.set("from", from); q.set("days", "14");
-  const [info, sl] = await Promise.all([st.info ? Promise.resolve(st.info) : helperGet("/book/info?" + new URLSearchParams({ d: DOC.id, slug: t.calSlug })), helperGet("/book/slots?" + q)]);
-  st.info = info;
-  st.slots = Object.assign(more ? (st.slots || {}) : {}, sl.slots || {});
-  st.until = ymd(new Date(new Date(from + "T12:00:00").getTime() + 14 * 864e5));
-}
-function ownBooking(t) {
-  sheet.classList.add("wide");
-  const paidLine = t.fee > 0 ? `<div class="summary"><div><span>${esc(t.name)}</span><b>₹${t.fee} paid by UPI</b></div></div>` : "";
-  if (st.sub === "form") return ownForm(t, paidLine);
-  if (!st.slots || st.slotsFor !== DOC.id + "/" + t.calSlug) {
-    box.innerHTML = `${paidLine}<p class="small" aria-live="polite">Loading available times…</p>`;
-    st.slotsFor = DOC.id + "/" + t.calSlug; st.info = null; st.slots = null; st.until = "";
-    loadSlots(t).then(() => { if (st.step === 2) render(); }).catch(() => { if (st.step === 2) useEmbed(); });
-    return;
-  }
-  const days = []; const start = new Date(); start.setHours(12, 0, 0, 0);
-  const n = Math.round((new Date(st.until + "T12:00:00") - start) / 864e5);
-  for (let i = 0; i < n; i++) days.push(ymd(new Date(start.getTime() + i * 864e5)));
-  const open = days.filter(d => st.slots[d] && st.slots[d].length);
-  if (!st.day || !open.includes(st.day)) st.day = open[0] || "";
-  const times = st.day ? st.slots[st.day] : [];
-  const part = iso => { const h = +fmt(iso, { hour: "numeric", hourCycle: "h23" }); return h < 12 ? "Morning" : h < 17 ? "Afternoon" : "Evening"; };
-  const groups = {}; times.forEach(iso => (groups[part(iso)] = groups[part(iso)] || []).push(iso));
-  box.innerHTML = `${paidLine}
-    ${st.msg ? `<p class="err">${esc(st.msg)}</p>` : ""}
-    <p class="small"><b>Choose a day</b>${TZ !== "Asia/Kolkata" ? ` · times shown in your time (${esc(TZ.replace(/_/g, " "))})` : ""}</p>
-    <div class="days">${days.map(d => { const has = st.slots[d] && st.slots[d].length; const dt = d + "T12:00:00"; return `<button class="chip" data-day="${d}" aria-pressed="${d === st.day}" ${has ? "" : "disabled"}><small>${new Date(dt).toLocaleDateString("en-IN", { weekday: "short" })}</small>${new Date(dt).getDate()}<small>${new Date(dt).toLocaleDateString("en-IN", { month: "short" })}</small></button>`; }).join("")}</div>
-    <button class="btn btn-ghost" id="more" style="justify-self:start">More dates →</button>
-    ${st.day ? `<p class="small"><b>${esc(new Date(st.day + "T12:00:00").toLocaleDateString("en-IN", { weekday: "long", day: "numeric", month: "long" }))}</b> · ${esc(st.info && st.info.length ? st.info.length + " min" : t.duration)}</p>
-      ${Object.entries(groups).map(([g, l]) => `<p class="small" style="margin:6px 0 0">${g}</p><div class="slots">${l.map(iso => `<button class="chip" data-time="${esc(iso)}">${esc(fmt(iso, { hour: "numeric", minute: "2-digit" }))}</button>`).join("")}</div>`).join("")}`
-      : `<p>No free times in these dates. Tap <b>More dates</b>, or message the clinic.</p>`}
-    <div class="sheet-actions"><button class="btn btn-ghost" id="back">Back</button></div>
-    <p class="small" style="text-align:center"><a href="#" id="alt">Having trouble? Use the full calendar</a></p>`;
-  st.msg = "";
-  box.querySelectorAll("[data-day]").forEach(b => b.onclick = () => { st.day = b.dataset.day; render(); });
-  box.querySelectorAll("[data-time]").forEach(b => b.onclick = () => { st.time = b.dataset.time; st.sub = "form"; render(); });
-  $("#more", box).onclick = e => { e.target.disabled = true; e.target.textContent = "Loading…"; loadSlots(t, true).then(render).catch(() => { e.target.textContent = "Couldn't load — try again"; e.target.disabled = false; }); };
-  $("#back", box).onclick = () => { st.slots = null; st.step = t.fee > 0 ? 1 : 0; render(); };
-  $("#alt", box).onclick = e => { e.preventDefault(); useEmbed(); };
-}
-function ownForm(t, paidLine) {
-  const f = st.form || (st.form = { name: "", email: "", phone: "+91 ", notes: "", extra: {} });
-  const info = st.info || {}; const phoneReq = !info.phone || info.phone.required;
-  const fieldHtml = x => {
-    const v = f.extra[x.slug] ?? "", id = "x_" + x.slug, lab = esc(x.label) + (x.required ? "" : " (optional)");
-    if (x.type === "textarea") return `<label class="f">${lab}<textarea id="${id}">${esc(v)}</textarea></label>`;
-    if ((x.type === "select" || x.type === "radio") && x.options.length) return `<label class="f">${lab}<select id="${id}"><option value=""></option>${x.options.map(o => `<option ${o === v ? "selected" : ""}>${esc(o)}</option>`).join("")}</select></label>`;
-    if (x.type === "boolean" || x.type === "checkbox") return `<label class="f" style="display:flex;gap:8px;align-items:center;font-weight:400"><input type="checkbox" id="${id}" style="width:auto" ${v === true ? "checked" : ""}>${lab}</label>`;
-    return `<label class="f">${lab}<input id="${id}" ${x.type === "number" ? 'inputmode="numeric"' : ""} value="${esc(v)}"></label>`;
-  };
-  box.innerHTML = `<div class="summary"><div><span>${esc(t.name)}${DOCS.length > 1 ? " · " + esc(DOC.name) : ""}</span><b>${esc(fmt(st.time, { weekday: "short", day: "numeric", month: "short" }))}, ${esc(fmt(st.time, { hour: "numeric", minute: "2-digit" }))}</b></div>${t.fee > 0 ? `<div><span>Fee</span><b>₹${t.fee} paid by UPI</b></div>` : ""}</div>
-    <label class="f">Full name<input id="bn" autocomplete="name" value="${esc(f.name)}"></label>
-    <label class="f">Email (your confirmation and video link come here)<input id="be" type="email" autocomplete="email" value="${esc(f.email)}"></label>
-    <label class="f">WhatsApp number${phoneReq ? "" : " (optional)"}<input id="bp" type="tel" autocomplete="tel" inputmode="tel" value="${esc(f.phone)}"></label>
-    ${(info.fields || []).map(fieldHtml).join("")}
-    <label class="f">Anything the doctor should know? (optional)<textarea id="bnotes" placeholder="Main complaint, how long, current medicines">${esc(f.notes)}</textarea></label>
-    <p class="err" id="e"></p>
-    <div class="sheet-actions"><button class="btn btn-ghost" id="back">Change time</button><button class="btn btn-solid" id="go">Confirm booking</button></div>`;
-  const save = () => {
-    f.name = $("#bn", box).value.trim(); f.email = $("#be", box).value.trim(); f.phone = $("#bp", box).value.trim(); f.notes = $("#bnotes", box).value.trim();
-    (info.fields || []).forEach(x => { const el = $("#x_" + x.slug, box); if (el) f.extra[x.slug] = el.type === "checkbox" ? el.checked : el.value.trim(); });
-  };
-  $("#back", box).onclick = () => { save(); st.sub = ""; render(); };
-  $("#go", box).onclick = async () => {
-    save(); const e = $("#e", box), go = $("#go", box);
-    const digits = f.phone.replace(/\D/g, "");
-    if (f.name.length < 2) return e.textContent = "Please enter your full name.";
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(f.email)) return e.textContent = "Please enter a valid email address.";
-    if ((phoneReq || digits.length > 3) && (digits.length < 10 || digits.length > 15)) return e.textContent = "Please enter your WhatsApp number with country code, e.g. +91 98765 43210.";
-    const miss = (info.fields || []).find(x => x.required && (f.extra[x.slug] === "" || f.extra[x.slug] === undefined || f.extra[x.slug] === false));
-    if (miss) return e.textContent = "Please fill in: " + miss.label;
-    go.disabled = true; go.textContent = "Booking…"; e.textContent = "";
-    try {
-      const r = await fetch(HELP() + "/book/create", { method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ d: DOC.id, slug: t.calSlug, start: st.time, tz: TZ, name: f.name, email: f.email, phone: digits.length > 3 ? f.phone : "", notes: f.notes, extra: f.extra, utr: st.utr }) });
-      const d = await r.json().catch(() => ({}));
-      if (r.status === 409) { st.msg = d.error || "That time was just taken. Please choose another."; st.sub = ""; st.slots = null; render(); return; }
-      if (!r.ok || !d.uid) throw new Error(d.error || "The booking could not be saved. Please try again.");
-      st.email = d.email || f.email; st.uid = d.uid; st.form = null; st.sub = ""; st.slots = null; st.step = 3; render();
-    } catch (x) { e.textContent = x.message; go.disabled = false; go.textContent = "Confirm booking"; }
-  };
 }
 function showDone(data) {
   if (Date.now() - doneAt < 4000) return;   // both Cal events fire for one booking

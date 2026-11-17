@@ -1,7 +1,6 @@
 /* DotCom by Arshees — doctor helper (Cloudflare Worker), Standard package.
  *
  * Keeps the doctor's Cal.com and Daily keys secret and powers doctor.html:
- *   GET  /book/info, /book/slots, POST /book/create -> own booking screen on the website (see book.js)
  *   POST /login         {pin}            -> {token}
  *   GET  /bookings      (auth)           -> {pending:[], upcoming:[]}
  *   POST /confirm       (auth) {uid}
@@ -30,7 +29,6 @@
  * No patient data is stored. Bookings are read live from Cal.com and passed through.
  * The only stored items are the doctor's push subscriptions and the type/time of the last event.
  */
-import { bookRoute, isBookPath } from "./book.js";
 
 const CAL = "https://api.cal.com/v2";
 const CAL_VERSION = "2024-08-13";
@@ -65,7 +63,6 @@ async function route(req, env, url, fromSite) {
   // everything below is for the doctor's own website only
   if (!fromSite) throw err(403, "Not allowed.");
   if (p === "/login" && M === "POST") return login(req, env);
-  if (isBookPath(p)) return bookRoute(req, url, p, async id => { const d = doctors(env).find(x => x.id === id) || (doctors(env).length === 1 ? doctors(env)[0] : null); return d && d.calKey ? { key: d.calKey, username: "" } : null; }, env.PUSH);
 
   const doc = await requireSession(req, env);
   if (p === "/bookings" && M === "GET") return bookings(env, doc);
