@@ -45,7 +45,8 @@ export async function videoRoute(req, env, url, p, opts) {
   let b; try { b = await call(env, doc, { op: "get", id: uid }); } catch (e) { throw err(404, "This booking was not found."); }
   if (b.status !== "confirmed") throw err(409, b.status === "pending" ? "Your booking is waiting for the clinic to confirm the payment." : "This consultation is not active (" + b.status + ").");
   const start = Date.parse(b.start), end = Date.parse(b.end), now = Date.now();
-  const early = role === "doctor" ? 60 : (Number(env.VIDEO_OPEN_MINUTES) || 15);   // patient: VIDEO_OPEN_MINUTES (default 15)
+  const open = Number(env.VIDEO_OPEN_MINUTES) || 15;                      // patient: VIDEO_OPEN_MINUTES (default 15)
+  const early = role === "doctor" ? Math.max(60, open) : open;           // doctor: an hour early (or more, if set higher)
   const opens = start - early * MIN, closes = end + (role === "doctor" ? 180 : 60) * MIN;
   if (now < opens) return json({ ok: false, wait: true, opens: new Date(opens).toISOString(), start: b.start, error: "The room opens " + early + " minutes before your consultation." });
   if (now > closes) throw err(410, "This consultation time has passed.");
