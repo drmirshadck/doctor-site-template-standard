@@ -264,7 +264,7 @@ footer{background:var(--teal-deep);color:#d6ecea;padding-block:64px 32px}
 .chip[aria-pressed="true"]{border-color:var(--teal);background:var(--soft)}
 .chip:disabled{opacity:.35;cursor:not-allowed}
 label.f{display:grid;gap:6px;font-size:.9rem;font-weight:600}
-input,textarea{font:16px var(--body);padding:12px;border-radius:12px;border:1.5px solid var(--line);background:var(--bg);color:var(--fg);width:100%}
+input,textarea,select{font:16px var(--body);padding:12px;border-radius:12px;border:1.5px solid var(--line);background:var(--bg);color:var(--fg);width:100%}
 textarea{resize:vertical;min-height:80px}
 .err{color:var(--coral);font-size:.86rem;min-height:1em}
 .summary{background:var(--soft);border-radius:14px;padding:14px;display:grid;gap:4px;font-size:.94rem}

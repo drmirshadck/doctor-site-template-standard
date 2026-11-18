@@ -1,6 +1,15 @@
-/* DotCom by Arshees — doctor helper (Cloudflare Worker), Standard package.
+/* DotCom by Arshees — doctor helper (Cloudflare Worker). Same code for Starter and Standard.
+ *
+ * PLAN (var): "starter" = email notifications only (no phone alerts); anything else = Standard (phone alerts + email).
  *
  * Keeps the doctor's Cal.com and Daily keys secret and powers doctor.html:
+ *   GET  /book/info, /book/slots, POST /book/create -> own booking screen on the website
+ *
+ * CALENDAR (var):  "own" = DotCom's own calendar (calendar.js + own.js): no Cal.com, no accounts for the doctor,
+ *                  bookings kept in a Durable Object per doctor, patient details encrypted with secret DATA_KEY,
+ *                  deleted RETAIN_DAYS after the appointment (default 365). Timetable: SCHEDULE_JSON (or "schedule"
+ *                  in each DOCTORS_JSON entry) as the starting point; the doctor edits it in the dashboard.
+ *                  anything else (default) = Cal.com as before (book.js).
  *   POST /login         {pin}            -> {token}
  *   GET  /bookings      (auth)           -> {pending:[], upcoming:[]}
  *   POST /confirm       (auth) {uid}
@@ -29,18 +38,22 @@
  * No patient data is stored. Bookings are read live from Cal.com and passed through.
  * The only stored items are the doctor's push subscriptions and the type/time of the last event.
  */
+import { bookRoute, isBookPath } from "./book.js";
+import { isOwnPublic, isOwnDoctor, ownPublic, ownDoctor } from "./own.js";
+import { emailPatient, emailDoctor } from "./mail.js";
+export { Calendar } from "./calendar.js";   // OWN CALENDAR (Durable Object, one per doctor)
 
 const CAL = "https://api.cal.com/v2";
 const CAL_VERSION = "2024-08-13";
 const enc = new TextEncoder();
 
 export default {
-  async fetch(req, env) {
+  async fetch(req, env, ctx) {
     const url = new URL(req.url);
     const cors = corsHeaders(req, env);
     if (req.method === "OPTIONS") return new Response(null, { status: cors ? 204 : 403, headers: cors || {} });
     try {
-      const r = await route(req, env, url, !!cors);
+      const r = await route(req, env, url, !!cors, ctx);
       if (cors) for (const [k, v] of Object.entries(cors)) r.headers.set(k, v);
       return r;
     } catch (e) {
@@ -51,20 +64,24 @@ export default {
   }
 };
 
-async function route(req, env, url, fromSite) {
+async function route(req, env, url, fromSite, ctx) {
   const p = url.pathname.replace(/\/+$/, "") || "/";
   const M = req.method;
 
   if (p === "/health") return json({ ok: true });
   if (p === "/cal-webhook" && M === "POST") return calWebhook(req, env, url.searchParams.get("d") || "");
-  if (p === "/vapid" && M === "GET") return json({ key: env.VAPID_PUBLIC_KEY || "" });
+  if (p === "/vapid" && M === "GET") return json({ key: env.PLAN === "starter" ? "" : (env.VAPID_PUBLIC_KEY || "") });
   if (p === "/last-event" && M === "GET") return json((await env.PUSH.get("lastEvent", "json")) || {});
 
   // everything below is for the doctor's own website only
   if (!fromSite) throw err(403, "Not allowed.");
   if (p === "/login" && M === "POST") return login(req, env);
+  const own = env.CALENDAR === "own";
+  if (own && isOwnPublic(p)) return ownPublic(req, env, url, p, doctors(env), hooks(env, ctx));
+  if (!own && isBookPath(p)) return bookRoute(req, url, p, async id => { const d = doctors(env).find(x => x.id === id) || (doctors(env).length === 1 ? doctors(env)[0] : null); return d && d.calKey ? { key: d.calKey, username: "" } : null; }, env.PUSH);
 
   const doc = await requireSession(req, env);
+  if (own && isOwnDoctor(p)) return ownDoctor(req, env, url, p, doc, hooks(env, ctx));
   if (p === "/bookings" && M === "GET") return bookings(env, doc);
   if (p === "/confirm" && M === "POST") {
     const { uid } = await body(req);
@@ -95,12 +112,40 @@ function jmap(env, k) { try { return JSON.parse(env[k] || "{}") || {}; } catch (
 function doctors(env) {
   let list = []; try { list = JSON.parse(env.DOCTORS_JSON || "[]"); } catch (e) {}
   if (!Array.isArray(list) || !list.length) {
-    return [{ id: "main", name: env.DOCTOR_NAME || "Doctor", roomUrl: env.DAILY_ROOM_URL || "", calKey: env.CAL_API_KEY, dailyKey: env.DAILY_API_KEY, pinHash: env.PIN_HASH }];
+    return [{ id: "main", name: env.DOCTOR_NAME || "Doctor", roomUrl: env.DAILY_ROOM_URL || "", calKey: env.CAL_API_KEY, dailyKey: env.DAILY_API_KEY, pinHash: env.PIN_HASH, email: env.DOCTOR_EMAIL || "" }];
   }
   const pins = jmap(env, "PINS"), cals = jmap(env, "CAL_KEYS"), dailies = jmap(env, "DAILY_KEYS");
-  return list.filter(d => d && /^[a-z0-9-]{1,40}$/i.test(d.id || "")).map(d => ({ id: d.id, name: d.name || "Doctor", roomUrl: d.roomUrl || "", calKey: cals[d.id], dailyKey: dailies[d.id], pinHash: pins[d.id] }));
+  return list.filter(d => d && /^[a-z0-9-]{1,40}$/i.test(d.id || "")).map(d => ({ id: d.id, name: d.name || "Doctor", roomUrl: d.roomUrl || "", calKey: cals[d.id], dailyKey: dailies[d.id], pinHash: pins[d.id], schedule: d.schedule, email: /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(d.email || "") ? d.email : "" }));
 }
 const subsKey = d => d.id === "main" ? "subs" : "subs:" + d.id;
+
+/* ---------- own calendar: phone alert to the doctor (no patient details in the alert) ---------- */
+function hooks(env, ctx) {
+  const many = doctors(env).length > 1;
+  const alert = async (doc, type) => {
+    if (env.PLAN === "starter") return;   // Starter: email only, no phone alerts
+    await env.PUSH.put("lastEvent", JSON.stringify({ type, at: Date.now(), doctor: many ? doc.name : "" }));
+    await pushAll(env, subsKey(doc));
+  };
+  const log = kind => e => console.log("email failed", kind, String(e && e.message || e));
+  // the patient and the doctor both get an email for every step (doctor: their own email from DOCTORS_JSON)
+  const mail = async (doc, b, kind, dkind) => {
+    await emailPatient(env, doc, b, kind, many).catch(log(kind));
+    await emailDoctor(env, doc, b, dkind || kind, many).catch(log("doctor " + (dkind || kind)));
+  };
+  return {
+    bg: ctx ? p => ctx.waitUntil(p) : null,
+    // phone alerts to the doctor never carry patient details; emails go only to that booking's patient
+    onNew: async (doc, b) => { await alert(doc, b.status === "pending" ? "request" : "created"); await mail(doc, b, b.status === "pending" ? "received" : "booked", b.status === "pending" ? "request" : "booked"); },
+    onChange: async (doc, b, what) => {
+      if (what === "confirmed") return mail(doc, b, "confirmed");
+      if (what === "declined") return mail(doc, b, "declined");
+      if (what === "cancelled by doctor") return mail(doc, b, "cancelledByDoctor");
+      if (what === "cancelled by patient") { await alert(doc, "cancelled"); return mail(doc, b, "cancelledByPatient"); }
+      if (what === "time changed by patient") { await alert(doc, "rescheduled"); return mail(doc, b, "rescheduled"); }
+    }
+  };
+}
 
 /* ---------- auth ---------- */
 async function login(req, env) {
