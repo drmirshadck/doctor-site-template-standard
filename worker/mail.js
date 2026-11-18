@@ -63,6 +63,14 @@ export async function sendMail(env, { to, subject, html }) {
   return { ok: true };
 }
 
+/* signed token for the patient's own "change or cancel" link (also used in emails) */
+export async function manageToken(env, docId, uid) {
+  const k = await crypto.subtle.importKey("raw", new TextEncoder().encode(String(env.SESSION_SECRET || "")), { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
+  const sig = new Uint8Array(await crypto.subtle.sign("HMAC", k, new TextEncoder().encode("manage:" + docId + ":" + uid)));
+  let b = ""; for (const c of sig.slice(0, 18)) b += String.fromCharCode(c);
+  return btoa(b).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+}
+
 /* ---------- the emails ---------- */
 function when(iso, tz) {
   const f = (z, o) => new Intl.DateTimeFormat("en-IN", Object.assign({ timeZone: z }, o)).format(new Date(iso));
@@ -111,6 +119,10 @@ export function bookingEmail(env, doc, b, kind, many) {
       `${hi}<p style="margin:0 0 16px;font-size:15px">Sorry — the clinic had to cancel this appointment.${b.reason ? " " + esc(b.reason) : ""} If you paid by UPI, the clinic will refund you.</p>${card(rows)}${btn(site + "#book", "Book another time")}`],
     cancelledByPatient: [`Appointment cancelled – ${clinic}`, "Your appointment is cancelled",
       `${hi}<p style="margin:0 0 16px;font-size:15px">As you asked, this appointment is cancelled. If you paid by UPI, the clinic will contact you about a refund.</p>${card(rows)}${btn(site + "#book", "Book a new appointment")}`],
+    reminder24: [`Reminder: your appointment tomorrow – ${clinic}`, "Your appointment is tomorrow",
+      `${hi}<p style="margin:0 0 16px;font-size:15px">A friendly reminder of your online consultation.</p>${card(rows)}<p style="margin:0 0 16px;font-size:15px">At your time, open the consultation room on the clinic's website. Please use a phone or laptop with a camera, in a quiet place with good internet.</p>${btn(room, "Consultation room")}${manage ? `<p style="margin:0;font-size:14px">Can't make it? <a href="${esc(manage)}" style="color:#005293">Change or cancel</a></p>` : ""}`],
+    reminder1: [`Starting soon: your consultation – ${clinic}`, "Your consultation starts in about an hour",
+      `${hi}${card(rows)}<p style="margin:0 0 16px;font-size:15px">A few minutes before your time, open the consultation room and allow camera and microphone when asked.</p>${btn(room, "Open consultation room")}`],
     rescheduled: [`New appointment time – ${clinic}`, "Your appointment time is changed",
       `${hi}${card(rows)}${manage ? btn(manage, "View, change or cancel") : ""}`]
   }[kind];

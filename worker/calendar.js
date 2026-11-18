@@ -12,6 +12,7 @@
  *   list, confirm, decline, dcancel, export   (doctor dashboard, after PIN login)
  *   schedule, setSchedule                     (doctor dashboard: timetable + leave)
  */
+import { emailPatient, manageToken } from "./mail.js";
 
 const DAY = 864e5;
 export const DEFAULT_SCHEDULE = {
@@ -36,6 +37,7 @@ export class Calendar {
       status TEXT NOT NULL, created INTEGER NOT NULL, updated INTEGER NOT NULL, enc TEXT NOT NULL)`);
     this.sql.exec(`CREATE INDEX IF NOT EXISTS bk_start ON bookings(start)`);
     this.sql.exec(`CREATE TABLE IF NOT EXISTS kv (k TEXT PRIMARY KEY, v TEXT)`);
+    for (const col of ["r24", "r1"]) { try { this.sql.exec(`ALTER TABLE bookings ADD COLUMN ${col} INTEGER NOT NULL DEFAULT 0`); } catch (e) { /* already there */ } }
   }
 
   async fetch(req) {
@@ -48,10 +50,42 @@ export class Calendar {
     }
   }
 
-  async alarm() { this.cleanup(); await this.ensureAlarm(true); }
-  async ensureAlarm(force) {
-    if (force || !(await this.ctx.storage.getAlarm())) await this.ctx.storage.setAlarm(Date.now() + DAY);
+  async alarm() {
+    this.cleanup();
+    try { await this.sendReminders(); } catch (e) { console.log("reminders failed", String(e && e.message || e)); }
+    await this.ensureAlarm(true);
   }
+  /* next wake-up: the next reminder that falls due, or tomorrow (daily clean-up) */
+  async ensureAlarm(force) {
+    const now = Date.now();
+    let next = now + DAY;
+    const rows = this.sql.exec(`SELECT start, r24, r1 FROM bookings WHERE status = 'confirmed' AND start > ? ORDER BY start LIMIT 200`, now).toArray();
+    for (const b of rows) {
+      if (!b.r24 && b.start - DAY > now) next = Math.min(next, b.start - DAY);
+      if (!b.r1) next = Math.min(next, Math.max(now + 6e4, b.start - 3600e3));
+    }
+    const cur = await this.ctx.storage.getAlarm();
+    if (force || !cur || cur > next || cur < now - 6e4) await this.ctx.storage.setAlarm(next);
+  }
+  /* reminder emails for confirmed bookings: ~24 hours and ~1 hour before */
+  async sendReminders() {
+    const meta = this.meta(); if (!meta.id) return;
+    const now = Date.now();
+    const rows = this.sql.exec(`SELECT * FROM bookings WHERE status = 'confirmed' AND start > ? AND start < ? AND (r24 = 0 OR r1 = 0)`, now + 5 * 6e4, now + DAY + 10 * 6e4).toArray();
+    for (const r of rows) {
+      const left = r.start - now;
+      let kind = "";
+      if (!r.r1 && left <= 3600e3 + 2 * 6e4) kind = "reminder1";
+      else if (!r.r24 && left <= DAY + 2 * 6e4 && left > 3 * 3600e3) kind = "reminder24";
+      if (!kind) continue;
+      // mark first, so a retry never sends twice; booked inside 24 h -> no "tomorrow" email
+      this.sql.exec(kind === "reminder1" ? `UPDATE bookings SET r1 = 1, r24 = 1 WHERE id = ?` : `UPDATE bookings SET r24 = 1 WHERE id = ?`, r.id);
+      const v = await this.view(r);
+      const t = await manageToken(this.env, meta.id, r.id);
+      await emailPatient(this.env, { id: meta.id, name: meta.name }, { ...v, t }, kind, meta.many).catch(e => console.log("reminder email failed", String(e && e.message || e)));
+    }
+  }
+  meta() { const row = this.sql.exec(`SELECT v FROM kv WHERE k = 'who'`).toArray()[0]; try { return row ? JSON.parse(row.v) : {}; } catch (e) { return {}; } }
   cleanup() {
     const days = Math.max(parseInt(this.env.RETAIN_DAYS || "365", 10) || 365, 30);
     this.sql.exec(`DELETE FROM bookings WHERE "end" < ?`, Date.now() - days * DAY);
@@ -112,7 +146,10 @@ export class Calendar {
 
   /* ---------- ops ---------- */
   async op(a) {
-    await this.ensureAlarm();
+    if (a.who && a.who.id) this.sql.exec(`INSERT INTO kv (k, v) VALUES ('who', ?) ON CONFLICT(k) DO UPDATE SET v = excluded.v`, JSON.stringify({ id: a.who.id, name: a.who.name, many: !!a.who.many }));
+    try { return await this.op2(a); } finally { await this.ensureAlarm(); }
+  }
+  async op2(a) {
     const s = this.schedule(a.defaults);
     switch (a.op) {
       case "info": {
@@ -140,8 +177,8 @@ export class Calendar {
         const status = t.confirm ? "pending" : "confirmed";
         const p = a.patient || {};
         const enc = await this.seal({ name: p.name, email: p.email, phone: p.phone, notes: p.notes, utr: p.utr, tz: p.tz });
-        this.sql.exec(`INSERT INTO bookings (id, start, "end", slug, title, status, created, updated, enc) VALUES (?,?,?,?,?,?,?,?,?)`,
-          id, start, start + t.length * 6e4, a.slug, t.name, status, Date.now(), Date.now(), enc);
+        this.sql.exec(`INSERT INTO bookings (id, start, "end", slug, title, status, created, updated, enc, r24, r1) VALUES (?,?,?,?,?,?,?,?,?,?,0)`,
+          id, start, start + t.length * 6e4, a.slug, t.name, status, Date.now(), Date.now(), enc, start - Date.now() < 26 * 3600e3 ? 1 : 0);
         return { uid: id, status, start: new Date(start).toISOString(), end: new Date(start + t.length * 6e4).toISOString(), title: t.name };
       }
       case "get": {
@@ -168,7 +205,7 @@ export class Calendar {
         const t = this.typeOf(s, b.slug) || { length: Math.round((b.end - b.start) / 6e4), confirm: true };
         const start = Date.parse(a.start);
         if (!this.freeSlots(s, t, start - 1, start + 1, b.id).includes(start)) throw bad(409, "Sorry, that time was just taken. Please choose another time.");
-        this.sql.exec(`UPDATE bookings SET start = ?, "end" = ?, updated = ? WHERE id = ?`, start, start + t.length * 6e4, Date.now(), b.id);
+        this.sql.exec(`UPDATE bookings SET start = ?, "end" = ?, updated = ?, r24 = ?, r1 = 0 WHERE id = ?`, start, start + t.length * 6e4, Date.now(), start - Date.now() < 26 * 3600e3 ? 1 : 0, b.id);
         return { ok: true, ...(await this.view({ ...b, start, end: start + t.length * 6e4 })) };
       }
       case "list": {

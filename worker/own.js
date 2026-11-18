@@ -7,6 +7,8 @@
  *                            GET /schedule, POST /schedule, GET /export?month=YYYY-MM (CSV)
  */
 import { DEFAULT_SCHEDULE } from "./calendar.js";
+import { manageToken } from "./mail.js";
+export { manageToken };
 
 const BOOK = ["/book/info", "/book/slots", "/book/create", "/book/manage", "/book/cancel", "/book/reschedule"];
 const DOCTOR = ["/bookings", "/confirm", "/decline", "/cancel-booking", "/schedule", "/export"];
@@ -92,7 +94,7 @@ function pick(doctors, id) {
 async function call(env, doc, msg) {
   if (!env.CALS) throw bad(500, "The calendar is not set up yet.");
   const stub = env.CALS.get(env.CALS.idFromName(doc.id));
-  const r = await stub.fetch("https://calendar/", { method: "POST", body: JSON.stringify({ ...msg, defaults: defaultsFor(env, doc) }) });
+  const r = await stub.fetch("https://calendar/", { method: "POST", body: JSON.stringify({ ...msg, defaults: defaultsFor(env, doc), who: { id: doc.id, name: doc.name, many: (() => { try { return JSON.parse(env.DOCTORS_JSON || "[]").length > 1; } catch (e) { return false; } })() } }) });
   const d = await r.json().catch(() => ({}));
   if (!r.ok) throw bad(r.status, d.error || "Something went wrong. Please try again.");
   return d;
@@ -103,12 +105,6 @@ function defaultsFor(env, doc) {
   return { ...DEFAULT_SCHEDULE, ...(s || {}), tz: (s && s.tz) || env.TIMEZONE || DEFAULT_SCHEDULE.tz };
 }
 function publicView(v) { return { title: v.title, slug: v.slug, start: v.start, end: v.end, status: v.status, name: v.name, canChange: v.canChange }; }
-export async function manageToken(env, docId, uid) {
-  const k = await crypto.subtle.importKey("raw", new TextEncoder().encode(String(env.SESSION_SECRET || "")), { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
-  const sig = new Uint8Array(await crypto.subtle.sign("HMAC", k, new TextEncoder().encode("manage:" + docId + ":" + uid)));
-  let b = ""; for (const c of sig.slice(0, 18)) b += String.fromCharCode(c);
-  return btoa(b).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
-}
 async function limit(env, req, tag, max, ttl, msg) {
   if (!env.PUSH) return;
   const k = tag + ":" + (req.headers.get("cf-connecting-ip") || "x");
