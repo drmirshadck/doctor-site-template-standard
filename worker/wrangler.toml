@@ -11,7 +11,7 @@ DAILY_ROOM_URL = ""                       # e.g. https://drsample.daily.co/consu
 ALLOWED_ORIGINS = "https://drmirshadck.github.io"   # the doctor's site, e.g. https://drsample.com,https://www.drsample.com
 VAPID_SUBJECT = "mailto:support@arshees.com"
 # OWN CALENDAR (no Cal.com): "own". Leave out or "cal" = Cal.com as before.
-CALENDAR = "own"
+CALENDAR = "cal"            # TEMPLATE DEMO helper only. For EVERY client site set CALENDAR = "own" (DotCom's own calendar).
 TIMEZONE = "Asia/Kolkata"
 RETAIN_DAYS = "365"          # bookings are deleted this many days after the appointment
 CHANGE_CUTOFF_HOURS = "2"    # patients can cancel / change time online until this many hours before
