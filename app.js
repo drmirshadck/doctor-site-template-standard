@@ -315,13 +315,13 @@ function ownBooking(t) {
       ${Object.entries(groups).map(([g, l]) => `<p class="small" style="margin:6px 0 0">${g}</p><div class="slots">${l.map(iso => `<button class="chip" data-time="${esc(iso)}">${esc(fmt(iso, { hour: "numeric", minute: "2-digit" }))}</button>`).join("")}</div>`).join("")}`
       : `<p>No free times in these dates. Tap <b>More dates</b>, or message the clinic.</p>`}
     <div class="sheet-actions"><button class="btn btn-ghost" id="back">Back</button></div>
-    <p class="small" style="text-align:center"><a href="#" id="alt">Having trouble? Use the full calendar</a></p>`;
+    <p class="small" style="text-align:center"><a href="#" id="alt">${CALU() ? "Having trouble? Use the full calendar" : "Having trouble? Message the clinic on WhatsApp"}</a></p>`;
   st.msg = "";
   box.querySelectorAll("[data-day]").forEach(b => b.onclick = () => { st.day = b.dataset.day; render(); });
   box.querySelectorAll("[data-time]").forEach(b => b.onclick = () => { st.time = b.dataset.time; st.sub = "form"; render(); });
   $("#more", box).onclick = e => { e.target.disabled = true; e.target.textContent = "Loading…"; loadSlots(t, true).then(render).catch(() => { e.target.textContent = "Couldn't load — try again"; e.target.disabled = false; }); };
   $("#back", box).onclick = () => { st.slots = null; st.step = t.fee > 0 ? 1 : 0; render(); };
-  $("#alt", box).onclick = e => { e.preventDefault(); useEmbed(); };
+  $("#alt", box).onclick = e => { e.preventDefault(); if (CALU()) useEmbed(); else window.open(wa(`Hello, I would like to book a ${t.name}${DOCS.length > 1 ? " with " + DOC.name : ""}.`), "_blank"); };
 }
 function ownForm(t, paidLine) {
   const f = st.form || (st.form = { name: "", email: "", phone: "+91 ", notes: "", extra: {} });
