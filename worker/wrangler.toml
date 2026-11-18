@@ -15,6 +15,14 @@ TIMEZONE = "Asia/Kolkata"
 RETAIN_DAYS = "365"          # bookings are deleted this many days after the appointment
 CHANGE_CUTOFF_HOURS = "2"    # patients can cancel / change time online until this many hours before
 # Starting timetable (the doctor changes it later in the dashboard). Type slugs = calSlug in config.js.
+# Patient emails (mail.js), own calendar only: "zoho" + EMAIL_FROM alias on DotCom's Zoho + secrets ZOHO_CLIENT_ID/SECRET/REFRESH_TOKEN
+# EMAIL_PROVIDER = "zoho"
+# EMAIL_FROM = "yourbooking@arshees.com"
+# ZOHO_ACCOUNT_ID = ""
+# ZOHO_DC = "com"
+# CLINIC_NAME = ""
+# SITE_URL = "https://DOMAIN/"
+# CLINIC_WHATSAPP = ""
 SCHEDULE_JSON = '''{"week":{"1":[["10:00","13:00"],["17:00","20:00"]],"2":[["10:00","13:00"],["17:00","20:00"]],"3":[["10:00","13:00"],["17:00","20:00"]],"4":[["10:00","13:00"],["17:00","20:00"]],"5":[["10:00","13:00"],["17:00","20:00"]],"6":[["10:00","13:00"]],"0":[]},"gap":10,"notice":3,"ahead":30,"types":{"online-video-consultation":{"name":"New consultation","length":30,"confirm":true},"review-consultation":{"name":"Review consultation","length":20,"confirm":true},"clinic-visit":{"name":"Clinic visit","length":15,"confirm":true}}}'''
 # Several doctors on one website: list them here (then DOCTOR_NAME / DAILY_ROOM_URL are ignored)
 # DOCTORS_JSON = '''[{"id":"anish","name":"Dr. Anish Mohan","roomUrl":"https://dranish.daily.co/consult"},{"id":"second","name":"Dr. Second","roomUrl":"https://drsecond.daily.co/consult"}]'''

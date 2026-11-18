@@ -40,7 +40,7 @@ export async function ownPublic(req, env, url, p, doctors, hooks = {}) {
     const r = await call(env, doc, { op: "create", slug: slug(b.slug), start: new Date(b.start).toISOString(), patient });
     const t = await manageToken(env, doc.id, r.uid);
     if (hooks.onNew) await safe(() => hooks.onNew(doc, { ...r, ...patient, t }));
-    return ok({ uid: r.uid, status: r.status, start: r.start, end: r.end, email, t, emails: !!env.EMAIL_PROVIDER });
+    return ok({ uid: r.uid, status: r.status, start: r.start, end: r.end, email, t, emails: !!(env.EMAIL_PROVIDER && env.ZOHO_REFRESH_TOKEN && env.EMAIL_FROM) });
   }
   // patient's manage link
   let a = {};
@@ -52,20 +52,20 @@ export async function ownPublic(req, env, url, p, doctors, hooks = {}) {
   if (p === "/book/manage") { const v = await call(env, doc, { op: "get", id: a.b }); return ok(publicView(v)); }
   if (p === "/book/cancel") {
     const v = await call(env, doc, { op: "cancel", id: a.b });
-    if (hooks.onChange) await safe(() => hooks.onChange(doc, v, "cancelled by patient"));
+    if (hooks.onChange) await safe(async () => hooks.onChange(doc, { ...v, t: a.t }, "cancelled by patient"));
     return ok({ ok: true });
   }
   await limit(env, req, "rs", 10, 3600, "Too many changes. Please contact the clinic.");
   if (isNaN(Date.parse(a.start))) throw bad(400, "Please choose a time again.");
   const v = await call(env, doc, { op: "reschedule", id: a.b, start: new Date(a.start).toISOString() });
-  if (hooks.onChange) await safe(() => hooks.onChange(doc, v, "time changed by patient"));
+  if (hooks.onChange) await safe(async () => hooks.onChange(doc, { ...v, t: a.t }, "time changed by patient"));
   return ok({ ok: true, start: v.start, status: v.status });
 }
 
 export async function ownDoctor(req, env, url, p, doc, hooks = {}) {
   const M = req.method;
   if (p === "/bookings" && M === "GET") return ok(await call(env, doc, { op: "list" }));
-  if (p === "/confirm" && M === "POST") { const { uid } = await body(req); const v = await call(env, doc, { op: "confirm", id: uid }); if (hooks.onChange) await safe(() => hooks.onChange(doc, v, "confirmed")); return ok({ ok: true }); }
+  if (p === "/confirm" && M === "POST") { const { uid } = await body(req); const v = await call(env, doc, { op: "confirm", id: uid }); if (hooks.onChange) await safe(async () => hooks.onChange(doc, { ...v, t: await manageToken(env, doc.id, v.uid) }, "confirmed")); return ok({ ok: true }); }
   if (p === "/decline" && M === "POST") { const { uid, reason } = await body(req); const v = await call(env, doc, { op: "decline", id: uid }); if (hooks.onChange) await safe(() => hooks.onChange(doc, { ...v, reason: String(reason || "").slice(0, 300) }, "declined")); return ok({ ok: true }); }
   if (p === "/cancel-booking" && M === "POST") { const { uid, reason } = await body(req); const v = await call(env, doc, { op: "dcancel", id: uid }); if (hooks.onChange) await safe(() => hooks.onChange(doc, { ...v, reason: String(reason || "").slice(0, 300) }, "cancelled by doctor")); return ok({ ok: true }); }
   if (p === "/schedule" && M === "GET") return ok(await call(env, doc, { op: "schedule" }));

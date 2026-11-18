@@ -38,6 +38,7 @@
  */
 import { bookRoute, isBookPath } from "./book.js";
 import { isOwnPublic, isOwnDoctor, ownPublic, ownDoctor } from "./own.js";
+import { emailPatient } from "./mail.js";
 export { Calendar } from "./calendar.js";   // OWN CALENDAR (Durable Object, one per doctor)
 
 const CAL = "https://api.cal.com/v2";
@@ -118,14 +119,22 @@ const subsKey = d => d.id === "main" ? "subs" : "subs:" + d.id;
 
 /* ---------- own calendar: phone alert to the doctor (no patient details in the alert) ---------- */
 function hooks(env) {
+  const many = doctors(env).length > 1;
   const alert = async (doc, type) => {
-    const many = doctors(env).length > 1;
     await env.PUSH.put("lastEvent", JSON.stringify({ type, at: Date.now(), doctor: many ? doc.name : "" }));
     await pushAll(env, subsKey(doc));
   };
+  const mail = (doc, b, kind) => emailPatient(env, doc, b, kind, many).catch(e => console.log("email failed", kind, String(e && e.message || e)));
   return {
-    onNew: (doc, b) => alert(doc, b.status === "pending" ? "request" : "created"),
-    onChange: (doc, b, what) => /patient/.test(what) ? alert(doc, /cancel/.test(what) ? "cancelled" : "rescheduled") : null
+    // phone alerts to the doctor never carry patient details; emails go only to that booking's patient
+    onNew: async (doc, b) => { await alert(doc, b.status === "pending" ? "request" : "created"); await mail(doc, b, b.status === "pending" ? "received" : "booked"); },
+    onChange: async (doc, b, what) => {
+      if (what === "confirmed") return mail(doc, b, "confirmed");
+      if (what === "declined") return mail(doc, b, "declined");
+      if (what === "cancelled by doctor") return mail(doc, b, "cancelledByDoctor");
+      if (what === "cancelled by patient") { await alert(doc, "cancelled"); return mail(doc, b, "cancelledByPatient"); }
+      if (what === "time changed by patient") { await alert(doc, "rescheduled"); return mail(doc, b, "rescheduled"); }
+    }
   };
 }
 
