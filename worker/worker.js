@@ -48,12 +48,12 @@ const CAL_VERSION = "2024-08-13";
 const enc = new TextEncoder();
 
 export default {
-  async fetch(req, env) {
+  async fetch(req, env, ctx) {
     const url = new URL(req.url);
     const cors = corsHeaders(req, env);
     if (req.method === "OPTIONS") return new Response(null, { status: cors ? 204 : 403, headers: cors || {} });
     try {
-      const r = await route(req, env, url, !!cors);
+      const r = await route(req, env, url, !!cors, ctx);
       if (cors) for (const [k, v] of Object.entries(cors)) r.headers.set(k, v);
       return r;
     } catch (e) {
@@ -64,7 +64,7 @@ export default {
   }
 };
 
-async function route(req, env, url, fromSite) {
+async function route(req, env, url, fromSite, ctx) {
   const p = url.pathname.replace(/\/+$/, "") || "/";
   const M = req.method;
 
@@ -77,11 +77,11 @@ async function route(req, env, url, fromSite) {
   if (!fromSite) throw err(403, "Not allowed.");
   if (p === "/login" && M === "POST") return login(req, env);
   const own = env.CALENDAR === "own";
-  if (own && isOwnPublic(p)) return ownPublic(req, env, url, p, doctors(env), hooks(env));
+  if (own && isOwnPublic(p)) return ownPublic(req, env, url, p, doctors(env), hooks(env, ctx));
   if (!own && isBookPath(p)) return bookRoute(req, url, p, async id => { const d = doctors(env).find(x => x.id === id) || (doctors(env).length === 1 ? doctors(env)[0] : null); return d && d.calKey ? { key: d.calKey, username: "" } : null; }, env.PUSH);
 
   const doc = await requireSession(req, env);
-  if (own && isOwnDoctor(p)) return ownDoctor(req, env, url, p, doc, hooks(env));
+  if (own && isOwnDoctor(p)) return ownDoctor(req, env, url, p, doc, hooks(env, ctx));
   if (p === "/bookings" && M === "GET") return bookings(env, doc);
   if (p === "/confirm" && M === "POST") {
     const { uid } = await body(req);
@@ -120,7 +120,7 @@ function doctors(env) {
 const subsKey = d => d.id === "main" ? "subs" : "subs:" + d.id;
 
 /* ---------- own calendar: phone alert to the doctor (no patient details in the alert) ---------- */
-function hooks(env) {
+function hooks(env, ctx) {
   const many = doctors(env).length > 1;
   const alert = async (doc, type) => {
     if (env.PLAN === "starter") return;   // Starter: email only, no phone alerts
@@ -134,6 +134,7 @@ function hooks(env) {
     await emailDoctor(env, doc, b, dkind || kind, many).catch(log("doctor " + (dkind || kind)));
   };
   return {
+    bg: ctx ? p => ctx.waitUntil(p) : null,
     // phone alerts to the doctor never carry patient details; emails go only to that booking's patient
     onNew: async (doc, b) => { await alert(doc, b.status === "pending" ? "request" : "created"); await mail(doc, b, b.status === "pending" ? "received" : "booked", b.status === "pending" ? "request" : "booked"); },
     onChange: async (doc, b, what) => {

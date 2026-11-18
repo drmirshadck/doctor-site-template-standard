@@ -41,7 +41,7 @@ export async function ownPublic(req, env, url, p, doctors, hooks = {}) {
     const patient = { name, email, phone, notes: String(b.notes || "").trim().slice(0, 800), utr: String(b.utr || "").replace(/\D/g, "").slice(0, 12), tz: tzOk(b.tz) };
     const r = await call(env, doc, { op: "create", slug: slug(b.slug), start: new Date(b.start).toISOString(), patient });
     const t = await manageToken(env, doc.id, r.uid);
-    if (hooks.onNew) await safe(() => hooks.onNew(doc, { ...r, ...patient, t, slug: slug(b.slug) }));
+    if (hooks.onNew) await later(hooks, () => hooks.onNew(doc, { ...r, ...patient, t, slug: slug(b.slug) }));
     return ok({ uid: r.uid, status: r.status, start: r.start, end: r.end, email, t, emails: !!(env.EMAIL_FROM && (env.ZEPTO_TOKEN || env.ZOHO_REFRESH_TOKEN)) });
   }
   // patient's manage link
@@ -54,22 +54,22 @@ export async function ownPublic(req, env, url, p, doctors, hooks = {}) {
   if (p === "/book/manage") { const v = await call(env, doc, { op: "get", id: a.b }); return ok(publicView(v)); }
   if (p === "/book/cancel") {
     const v = await call(env, doc, { op: "cancel", id: a.b });
-    if (hooks.onChange) await safe(async () => hooks.onChange(doc, { ...v, t: a.t }, "cancelled by patient"));
+    if (hooks.onChange) await later(hooks, async () => hooks.onChange(doc, { ...v, t: a.t }, "cancelled by patient"));
     return ok({ ok: true });
   }
   await limit(env, req, "rs", 10, 3600, "Too many changes. Please contact the clinic.");
   if (isNaN(Date.parse(a.start))) throw bad(400, "Please choose a time again.");
   const v = await call(env, doc, { op: "reschedule", id: a.b, start: new Date(a.start).toISOString() });
-  if (hooks.onChange) await safe(async () => hooks.onChange(doc, { ...v, t: a.t }, "time changed by patient"));
+  if (hooks.onChange) await later(hooks, async () => hooks.onChange(doc, { ...v, t: a.t }, "time changed by patient"));
   return ok({ ok: true, start: v.start, status: v.status });
 }
 
 export async function ownDoctor(req, env, url, p, doc, hooks = {}) {
   const M = req.method;
   if (p === "/bookings" && M === "GET") return ok(await call(env, doc, { op: "list" }));
-  if (p === "/confirm" && M === "POST") { const { uid } = await body(req); const v = await call(env, doc, { op: "confirm", id: uid }); if (hooks.onChange) await safe(async () => hooks.onChange(doc, { ...v, t: await manageToken(env, doc.id, v.uid) }, "confirmed")); return ok({ ok: true }); }
-  if (p === "/decline" && M === "POST") { const { uid, reason } = await body(req); const v = await call(env, doc, { op: "decline", id: uid }); if (hooks.onChange) await safe(() => hooks.onChange(doc, { ...v, reason: String(reason || "").slice(0, 300) }, "declined")); return ok({ ok: true }); }
-  if (p === "/cancel-booking" && M === "POST") { const { uid, reason } = await body(req); const v = await call(env, doc, { op: "dcancel", id: uid }); if (hooks.onChange) await safe(() => hooks.onChange(doc, { ...v, reason: String(reason || "").slice(0, 300) }, "cancelled by doctor")); return ok({ ok: true }); }
+  if (p === "/confirm" && M === "POST") { const { uid } = await body(req); const v = await call(env, doc, { op: "confirm", id: uid }); if (hooks.onChange) await later(hooks, async () => hooks.onChange(doc, { ...v, t: await manageToken(env, doc.id, v.uid) }, "confirmed")); return ok({ ok: true }); }
+  if (p === "/decline" && M === "POST") { const { uid, reason } = await body(req); const v = await call(env, doc, { op: "decline", id: uid }); if (hooks.onChange) await later(hooks, () => hooks.onChange(doc, { ...v, reason: String(reason || "").slice(0, 300) }, "declined")); return ok({ ok: true }); }
+  if (p === "/cancel-booking" && M === "POST") { const { uid, reason } = await body(req); const v = await call(env, doc, { op: "dcancel", id: uid }); if (hooks.onChange) await later(hooks, () => hooks.onChange(doc, { ...v, reason: String(reason || "").slice(0, 300) }, "cancelled by doctor")); return ok({ ok: true }); }
   if (p === "/schedule" && M === "GET") return ok(await call(env, doc, { op: "schedule" }));
   if (p === "/schedule" && M === "POST") { const b = await body(req); return ok(await call(env, doc, { op: "setSchedule", schedule: b.schedule || {} })); }
   if (p === "/export" && M === "GET") {
@@ -112,6 +112,7 @@ async function limit(env, req, tag, max, ttl, msg) {
   if (n >= max) throw bad(429, msg);
   await env.PUSH.put(k, String(n + 1), { expirationTtl: ttl });
 }
+function later(hooks, fn) { const p = safe(fn); if (hooks && hooks.bg) { hooks.bg(p); return; } return p; }   // bg: answer the patient/doctor at once, emails/alerts finish in the background
 async function safe(fn) { try { await fn(); } catch (e) { /* alerts/emails must never break a booking */ } }
 function slug(s) { s = String(s || ""); if (!/^[a-z0-9-]{1,80}$/i.test(s)) throw bad(400, "Bad request."); return s; }
 function tzOk(tz) { tz = String(tz || ""); if (tz === "Asia/Calcutta") return "Asia/Kolkata"; try { if (/^[A-Za-z_]+(\/[A-Za-z0-9_+-]+){0,2}$/.test(tz)) { new Intl.DateTimeFormat("en", { timeZone: tz }); return tz; } } catch (e) {} return "Asia/Kolkata"; }
