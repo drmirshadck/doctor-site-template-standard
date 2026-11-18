@@ -2,5 +2,7 @@ User-agent: *
 Allow: /
 Disallow: /consult.html
 Disallow: /doctor.html
+Disallow: /room.html
+Disallow: /manage.html
 
 Sitemap: https://DOMAIN/sitemap.xml
