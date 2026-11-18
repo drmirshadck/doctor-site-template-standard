@@ -7,6 +7,10 @@
 <meta name="robots" content="noindex">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@600;700;800&family=Nunito+Sans:wght@400;600&display=swap" rel="stylesheet">
+<script>/* DotCom own video: a link with a booking, or a site with no Daily room set, uses the website's own room (room.html) */
+document.write('<script src="config.js?v=' + Date.now() + '"><\/script>');</script>
+<script>(function(){ var S = window.SITE || {}, v = S.video || {}, ds = (S.doctors || []).some(function(d){ return d.roomUrl; });
+  if (/[?&]b=/.test(location.search) || (S.helper && S.helper.url && !v.roomUrl && !ds)) location.replace("room.html" + location.search); })();</script>
 <script>document.write('<script src="config.js?v=' + Date.now() + '"><\/script>')</script><!-- always the newest settings -->
 <!-- Same video setup as the Dr Murshida site. Doctor details come from config.js. -->
 <style>

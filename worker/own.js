@@ -66,7 +66,12 @@ export async function ownPublic(req, env, url, p, doctors, hooks = {}) {
 
 export async function ownDoctor(req, env, url, p, doc, hooks = {}) {
   const M = req.method;
-  if (p === "/bookings" && M === "GET") return ok(await call(env, doc, { op: "list" }));
+  if (p === "/bookings" && M === "GET") {
+    const r = await call(env, doc, { op: "list" });
+    // signed link per booking, so the dashboard can send the patient their consultation-room link
+    for (const k of ["pending", "upcoming"]) for (const b of r[k] || []) b.t = await manageToken(env, doc.id, b.uid);
+    return ok(r);
+  }
   if (p === "/confirm" && M === "POST") { const { uid } = await body(req); const v = await call(env, doc, { op: "confirm", id: uid }); if (hooks.onChange) await later(hooks, async () => hooks.onChange(doc, { ...v, t: await manageToken(env, doc.id, v.uid) }, "confirmed")); return ok({ ok: true }); }
   if (p === "/decline" && M === "POST") { const { uid, reason } = await body(req); const v = await call(env, doc, { op: "decline", id: uid }); if (hooks.onChange) await later(hooks, () => hooks.onChange(doc, { ...v, reason: String(reason || "").slice(0, 300) }, "declined")); return ok({ ok: true }); }
   if (p === "/cancel-booking" && M === "POST") { const { uid, reason } = await body(req); const v = await call(env, doc, { op: "dcancel", id: uid }); if (hooks.onChange) await later(hooks, () => hooks.onChange(doc, { ...v, reason: String(reason || "").slice(0, 300) }, "cancelled by doctor")); return ok({ ok: true }); }

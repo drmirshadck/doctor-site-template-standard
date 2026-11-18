@@ -249,7 +249,7 @@ function render() {
     $("#ics", box).onclick = () => {
       const z = d => new Date(d).toISOString().replace(/[-:]/g, "").replace(/\.\d{3}/, "");
       const end = st.bend || new Date(Date.parse(st.start) + 30 * 6e4).toISOString();
-      const room = `${location.origin}${location.pathname.replace(/[^/]*$/, "")}consult.html${DOC.id !== "main" ? "?d=" + encodeURIComponent(DOC.id) : ""}`;
+      const room = `${location.origin}${location.pathname.replace(/[^/]*$/, "")}room.html?${DOC.id !== "main" ? "d=" + encodeURIComponent(DOC.id) + "&" : ""}b=${encodeURIComponent(st.uid)}&t=${encodeURIComponent(st.t)}`;
       const ics = ["BEGIN:VCALENDAR", "VERSION:2.0", "PRODID:-//DotCom by Arshees//Booking//EN", "BEGIN:VEVENT", `UID:${st.uid}@dotcom`, `DTSTAMP:${z(Date.now())}`, `DTSTART:${z(st.start)}`, `DTEND:${z(end)}`,
         `SUMMARY:${((st.btitle || "Consultation") + " - " + DOC.name).replace(/[,;]/g, " ")}`, `DESCRIPTION:Join at ${room}\\nChange or cancel: ${manage}`, `URL:${room}`,
         "BEGIN:VALARM", "TRIGGER:-PT30M", "ACTION:DISPLAY", "DESCRIPTION:Consultation in 30 minutes", "END:VALARM", "END:VEVENT", "END:VCALENDAR"].join("\r\n");
