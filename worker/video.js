@@ -15,28 +15,56 @@
  * Consent: the patient ticks "I agree" on the room page before joining ({consent: true}); the time is saved
  *   (KV "consent:<doctor>:<booking>", kept RETAIN_DAYS) and the doctor's join shows it. Without it: {needsConsent: true}.
  *
+ * Backup video (if our room can't connect): Daily, under DotCom's ONE Daily account (secret DAILY_BACKUP_KEY, same key
+ *   on every helper). POST /video/backup makes a private, unrecorded room for this booking only + a short pass per side.
+ *   The room page uses Daily's engine inside our own design (no Daily screen, no Daily branding).
+ *
  * Routes:  POST /video/join  {d, b, t, consent}  (patient)   or  {d, b} + Authorization: Bearer <session> (doctor)
+ *          POST /video/backup  (same body / login as join)  -> {url, token}
  *          GET  /video/ws?ticket=...      (WebSocket, the two sides exchange connection messages)
  */
 import { call, manageToken } from "./own.js";
 
 const enc = new TextEncoder();
 const MIN = 60e3;
-const isVideoPath = p => p === "/video/join" || p === "/video/ws";
+const isVideoPath = p => p === "/video/join" || p === "/video/ws" || p === "/video/backup";
 export { isVideoPath };
 
 /* opts: { doctors: [...], whoAmI: async req => doctorId | null, onWaiting: async (doc) => {}, json, err } */
 export async function videoRoute(req, env, url, p, opts) {
   const { json, err } = opts;
   if (p === "/video/ws") return wsRoute(req, env, url, opts);
-  if (p !== "/video/join" || req.method !== "POST") throw err(404, "Not found.");
+  if ((p !== "/video/join" && p !== "/video/backup") || req.method !== "POST") throw err(404, "Not found.");
   const a = await req.json().catch(() => ({}));
+  const g = await gate(req, env, opts, a);
+  if (g.wait) return json(g.wait);
+  const { doc, uid, role, b, closes, info } = g;
+
+  // patient consent: asked once per consultation, before the room opens; the time is kept with the clinic's records
+  const ckey = "consent:" + doc.id + ":" + uid;
+  let consentAt = env.PUSH ? await env.PUSH.get(ckey) : null;
+  if (role === "patient" && !consentAt) {
+    if (p === "/video/backup" || a.consent !== true) return json({ ...info, needsConsent: true });
+    consentAt = new Date().toISOString();
+    if (env.PUSH) await env.PUSH.put(ckey, consentAt, { expirationTtl: (Number(env.RETAIN_DAYS) || 365) * 86400 });
+  }
+
+  if (p === "/video/backup") return json(await dailyRoom(env, opts, doc, uid, role, info.me, closes));
+
+  const exp = Math.min(closes, Date.now() + 4 * 3600e3);
+  const ticket = await sign(env, [doc.id, uid, role, exp].join("|"));
+  if (role === "patient" && opts.onWaiting) { try { await opts.onWaiting(doc, b); } catch (e) {} }
+  return json({ ...info, ticket, iceServers: await iceServers(env), consentAt: consentAt || null, backup: !!env.DAILY_BACKUP_KEY });
+}
+
+/* who is joining, and is the room open for them */
+async function gate(req, env, opts, a) {
+  const { err } = opts;
   const doc = (opts.doctors || []).find(x => x.id === String(a.d || "main")) || (opts.doctors || [])[0];
   if (!doc) throw err(400, "Unknown doctor.");
   const uid = String(a.b || "");
   if (!/^[A-Za-z0-9_-]{8,40}$/.test(uid)) throw err(400, "This link is not complete.");
 
-  // who is joining
   let role = "patient";
   const auth = req.headers.get("authorization");
   if (auth) {
@@ -51,25 +79,37 @@ export async function videoRoute(req, env, url, p, opts) {
   const open = Number(env.VIDEO_OPEN_MINUTES) || 15;                      // patient: VIDEO_OPEN_MINUTES (default 15)
   const early = role === "doctor" ? Math.max(60, open) : open;           // doctor: an hour early (or more, if set higher)
   const opens = start - early * MIN, closes = end + (role === "doctor" ? 180 : 60) * MIN;
-  if (now < opens) return json({ ok: false, wait: true, opens: new Date(opens).toISOString(), start: b.start, error: "The room opens " + early + " minutes before your consultation." });
+  if (now < opens) return { wait: { ok: false, wait: true, opens: new Date(opens).toISOString(), start: b.start, error: "The room opens " + early + " minutes before your consultation." } };
   if (now > closes) throw err(410, "This consultation time has passed.");
-
   const info = { ok: true, role, me: role === "doctor" ? doc.name : b.name, other: role === "doctor" ? b.name : doc.name, title: b.title, start: b.start, end: b.end };
-
-  // patient consent: asked once per consultation, before the room opens; the time is kept with the clinic's records
-  const ckey = "consent:" + doc.id + ":" + uid;
-  let consentAt = env.PUSH ? await env.PUSH.get(ckey) : null;
-  if (role === "patient" && !consentAt) {
-    if (a.consent !== true) return json({ ...info, needsConsent: true });
-    consentAt = new Date().toISOString();
-    if (env.PUSH) await env.PUSH.put(ckey, consentAt, { expirationTtl: (Number(env.RETAIN_DAYS) || 365) * 86400 });
-  }
-
-  const exp = Math.min(closes, now + 4 * 3600e3);
-  const ticket = await sign(env, [doc.id, uid, role, exp].join("|"));
-  if (role === "patient" && opts.onWaiting) { try { await opts.onWaiting(doc, b); } catch (e) {} }
-  return json({ ...info, ticket, iceServers: await iceServers(env), consentAt: consentAt || null });
+  return { doc, uid, role, b, closes, info };
 }
+
+/* BACKUP VIDEO: Daily (DotCom's one Daily account, secret DAILY_BACKUP_KEY — no account per doctor).
+   A private room just for this booking, named from a hash (no names in it), not recorded, at most 2 people,
+   closing an hour after the consultation; each side gets its own short-lived pass. */
+async function dailyRoom(env, opts, doc, uid, role, me, closes) {
+  const { err } = opts;
+  if (!env.DAILY_BACKUP_KEY) throw err(503, "Backup video is not set up for this clinic.");
+  const base = String(env.DAILY_API_BASE || "https://api.daily.co/v1").replace(/\/$/, "");
+  const H = { Authorization: "Bearer " + env.DAILY_BACKUP_KEY, "Content-Type": "application/json" };
+  const name = "dcb-" + (await hashHex(env, doc.id + ":" + uid)).slice(0, 24);
+  const exp = Math.floor(Math.min(closes, Date.now() + 6 * 3600e3) / 1000);
+  let room = await fetch(base + "/rooms/" + name, { headers: H });
+  if (room.status === 404) {
+    room = await fetch(base + "/rooms", { method: "POST", headers: H, body: JSON.stringify({ name, privacy: "private",
+      properties: { exp, eject_at_room_exp: true, max_participants: 3, enable_chat: false, enable_screenshare: false, enable_prejoin_ui: false, start_video_off: false, start_audio_off: false } }) });
+    if (room.status === 400) room = await fetch(base + "/rooms/" + name, { headers: H });   // the other side made it a moment ago
+  }
+  if (!room.ok) { console.log("daily room failed", room.status, await room.text().catch(() => "")); throw err(502, "Backup video couldn't start. Please try again."); }
+  const r = await room.json();
+  const tk = await fetch(base + "/meeting-tokens", { method: "POST", headers: H, body: JSON.stringify({ properties: {
+    room_name: name, exp, eject_at_token_exp: true, is_owner: false, user_name: me || (role === "doctor" ? "Doctor" : "Patient"),
+    user_id: role, enable_screenshare: false } }) });   // recording is never switched on (rooms and passes don't allow it)
+  if (!tk.ok) { console.log("daily token failed", tk.status, await tk.text().catch(() => "")); throw err(502, "Backup video couldn't start. Please try again."); }
+  return { ok: true, role, url: r.url, token: (await tk.json()).token };
+}
+async function hashHex(env, s) { const d = await crypto.subtle.digest("SHA-256", enc.encode("room|" + env.SESSION_SECRET + "|" + s)); return [...new Uint8Array(d)].map(x => x.toString(16).padStart(2, "0")).join(""); }
 
 async function wsRoute(req, env, url, opts) {
   const { err } = opts;
@@ -109,6 +149,8 @@ export class Room {
   webSocketError(ws) { this.left(ws); }
   left(ws) {
     const role = (this.state.getTags(ws) || [])[0];
+    // a reload or a second screen: the new connection is already here, so the other side must not hang up on it
+    if (this.state.getWebSockets(role).some(w => w !== ws && w.readyState === 1)) return;
     for (const w of this.state.getWebSockets()) if (w !== ws) { try { w.send(JSON.stringify({ type: "peer-left", role })); } catch (e) {} }
   }
 }
