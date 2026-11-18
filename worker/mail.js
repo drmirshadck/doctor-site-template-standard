@@ -1,16 +1,23 @@
 /* DotCom by Arshees — booking emails to patients (own calendar).
  *
- * Sender: Zoho Mail API, from the alias in EMAIL_FROM (e.g. yourbooking@arshees.com) on DotCom's Zoho account.
- * Turned on with var EMAIL_PROVIDER = "zoho". Needs:
- *   vars:    EMAIL_FROM, ZOHO_ACCOUNT_ID, ZOHO_DC ("com", "in", "eu" …), CLINIC_NAME, SITE_URL, CLINIC_WHATSAPP (digits)
- *   secrets: ZOHO_CLIENT_ID, ZOHO_CLIENT_SECRET, ZOHO_REFRESH_TOKEN  (Zoho "Self Client", scope ZohoMail.messages.CREATE only)
+ * EMAIL_PROVIDER = "zeptomail" (recommended): Zoho ZeptoMail, sender EMAIL_FROM (e.g. yourbooking@arshees.com),
+ *   sender NAME = the clinic (CLINIC_NAME). Secret ZEPTO_TOKEN (a "Send Mail" token from the ZeptoMail Mail Agent),
+ *   var ZEPTO_HOST = "api.zeptomail.com" (or api.zeptomail.in for an India-region account).
+ * EMAIL_PROVIDER = "zoho": Zoho Mail mailbox API (older option). vars ZOHO_ACCOUNT_ID, ZOHO_DC;
+ *   secrets ZOHO_CLIENT_ID, ZOHO_CLIENT_SECRET, ZOHO_REFRESH_TOKEN (scope ZohoMail.messages.CREATE only).
+ * Both need vars: EMAIL_FROM, CLINIC_NAME, SITE_URL, CLINIC_WHATSAPP (digits).
  * Emails only ever go to the patient of that booking (and, if set, the doctor's own email). Content is fixed text;
  * nothing the patient typed is put in the subject. Failures never stop a booking.
  */
 
 const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 
-export function mailOn(env) { return env.EMAIL_PROVIDER === "zoho" && env.ZOHO_REFRESH_TOKEN && env.EMAIL_FROM; }
+export function mailOn(env) {
+  if (!env.EMAIL_FROM) return false;
+  if (env.EMAIL_PROVIDER === "zeptomail") return !!env.ZEPTO_TOKEN;
+  if (env.EMAIL_PROVIDER === "zoho") return !!env.ZOHO_REFRESH_TOKEN;
+  return false;
+}
 
 async function zohoToken(env) {
   const k = "zoho:token";
@@ -34,6 +41,16 @@ export async function sendMail(env, { to, subject, html }) {
     const n = +((await env.PUSH.get(hk)) || 0);
     if (n >= +(env.EMAIL_HOURLY_LIMIT || 30)) return { skipped: true, reason: "hourly limit" };
     await env.PUSH.put(hk, String(n + 1), { expirationTtl: 7200 });
+  }
+  if (env.EMAIL_PROVIDER === "zeptomail") {
+    const host = String(env.ZEPTO_HOST || "api.zeptomail.com").replace(/[^a-z.]/g, "");
+    const tok = String(env.ZEPTO_TOKEN).replace(/^Zoho-enczapikey\s+/i, "");
+    const r = await fetch(`https://${host}/v1.1/email`, { method: "POST",
+      headers: { Authorization: "Zoho-enczapikey " + tok, "Content-Type": "application/json", Accept: "application/json" },
+      body: JSON.stringify({ from: { address: env.EMAIL_FROM, name: String(env.CLINIC_NAME || env.EMAIL_FROM_NAME || "Online Clinic").slice(0, 80) },
+        to: [{ email_address: { address: to } }], subject, htmlbody: html, track_clicks: false, track_opens: false }) });
+    if (!r.ok) throw new Error("zeptomail " + r.status + " " + (await r.text()).slice(0, 200));
+    return { ok: true };
   }
   const dc = (env.ZOHO_DC || "com").replace(/[^a-z.]/g, "");
   const from = env.EMAIL_FROM_NAME ? `${env.EMAIL_FROM_NAME} <${env.EMAIL_FROM}>` : env.EMAIL_FROM;

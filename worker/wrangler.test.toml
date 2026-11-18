@@ -13,11 +13,10 @@ TIMEZONE = "Asia/Kolkata"
 RETAIN_DAYS = "365"
 CHANGE_CUTOFF_HOURS = "2"
 DOCTORS_JSON = '''[{"id": "nagaraja", "name": "Dr Nagaraja Rao"}, {"id": "imran", "name": "Dr Imran Khan"}]'''
-# Patient emails (mail.js): sent from the Zoho alias below. Off until the ZOHO_* secrets are added.
-EMAIL_PROVIDER = "zoho"
+# Patient emails (mail.js) via Zoho ZeptoMail, sender name = CLINIC_NAME. Off until secret ZEPTO_TOKEN is added.
+EMAIL_PROVIDER = "zeptomail"
 EMAIL_FROM = "yourbooking@arshees.com"
-ZOHO_ACCOUNT_ID = "995955000000008002"
-ZOHO_DC = "com"
+ZEPTO_HOST = "api.zeptomail.com"
 CLINIC_NAME = "Neuron Homoeos"
 SITE_URL = "https://arshees.com/samples/reg-mwlf8h7qv884/"
 CLINIC_WHATSAPP = "971586576586"
@@ -37,4 +36,4 @@ id = "821630048aaa43d2862d1064d4c1b6da"
 
 # Secrets (Cloudflare dashboard → Settings → Variables and Secrets):
 #   PINS, SESSION_SECRET, DATA_KEY, VAPID_PUBLIC_KEY, VAPID_PRIVATE_JWK
-#   emails: ZOHO_CLIENT_ID, ZOHO_CLIENT_SECRET, ZOHO_REFRESH_TOKEN
+#   emails: ZEPTO_TOKEN

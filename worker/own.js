@@ -40,7 +40,7 @@ export async function ownPublic(req, env, url, p, doctors, hooks = {}) {
     const r = await call(env, doc, { op: "create", slug: slug(b.slug), start: new Date(b.start).toISOString(), patient });
     const t = await manageToken(env, doc.id, r.uid);
     if (hooks.onNew) await safe(() => hooks.onNew(doc, { ...r, ...patient, t }));
-    return ok({ uid: r.uid, status: r.status, start: r.start, end: r.end, email, t, emails: !!(env.EMAIL_PROVIDER && env.ZOHO_REFRESH_TOKEN && env.EMAIL_FROM) });
+    return ok({ uid: r.uid, status: r.status, start: r.start, end: r.end, email, t, emails: !!(env.EMAIL_FROM && (env.ZEPTO_TOKEN || env.ZOHO_REFRESH_TOKEN)) });
   }
   // patient's manage link
   let a = {};

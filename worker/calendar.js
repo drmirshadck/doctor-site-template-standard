@@ -175,7 +175,7 @@ export class Calendar {
         const now = Date.now();
         const rows = this.sql.exec(`SELECT * FROM bookings WHERE "end" > ? AND status IN ('pending','confirmed') ORDER BY start LIMIT 200`, now - 2 * 3600e3).toArray();
         const all = await Promise.all(rows.map(r => this.view(r)));
-        return { own: true, emails: !!(this.env.EMAIL_PROVIDER && this.env.ZOHO_REFRESH_TOKEN && this.env.EMAIL_FROM), pending: all.filter(b => b.status === "pending"), upcoming: all.filter(b => b.status === "confirmed") };
+        return { own: true, emails: !!(this.env.EMAIL_FROM && (this.env.ZEPTO_TOKEN || this.env.ZOHO_REFRESH_TOKEN)), pending: all.filter(b => b.status === "pending"), upcoming: all.filter(b => b.status === "confirmed") };
       }
       case "export": {
         const m = /^(\d{4})-(\d{2})$/.exec(a.month || ""); if (!m) throw bad(400, "Choose a month.");
