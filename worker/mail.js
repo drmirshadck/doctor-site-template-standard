@@ -2,7 +2,7 @@
  *
  * EMAIL_PROVIDER = "zeptomail" (recommended): Zoho ZeptoMail, sender EMAIL_FROM (e.g. yourbooking@arshees.com),
  *   sender NAME = the clinic (CLINIC_NAME). Secret ZEPTO_TOKEN (a "Send Mail" token from the ZeptoMail Mail Agent),
- *   var ZEPTO_HOST = "api.zeptomail.com" (or api.zeptomail.in for an India-region account).
+ *   var ZEPTO_HOST = the "Host" shown in the agent's SMTP/API page (e.g. cpaas.zoho.com or api.zeptomail.com).
  * EMAIL_PROVIDER = "zoho": Zoho Mail mailbox API (older option). vars ZOHO_ACCOUNT_ID, ZOHO_DC;
  *   secrets ZOHO_CLIENT_ID, ZOHO_CLIENT_SECRET, ZOHO_REFRESH_TOKEN (scope ZohoMail.messages.CREATE only).
  * Both need vars: EMAIL_FROM, CLINIC_NAME, SITE_URL, CLINIC_WHATSAPP (digits).
