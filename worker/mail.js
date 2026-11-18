@@ -78,7 +78,7 @@ function when(iso, tz) {
   const z = tz === "Asia/Kolkata" ? "India time" : tz.replace(/_/g, " ") + " time";
   return `${main} (${z})`;
 }
-function shell(env, title, bodyHtml) {
+function shell(env, title, bodyHtml, forDoctor) {
   const clinic = esc(env.CLINIC_NAME || "the clinic");
   const wa = String(env.CLINIC_WHATSAPP || "").replace(/\D/g, "");
   return `<!doctype html><html><body style="margin:0;background:#f3f6f8;font-family:Arial,Helvetica,sans-serif;color:#1d3239">
@@ -87,9 +87,9 @@ function shell(env, title, bodyHtml) {
 <p style="margin:0 0 4px;font-size:13px;color:#5d727a;letter-spacing:.04em;text-transform:uppercase">${clinic}</p>
 <h1 style="margin:0 0 16px;font-size:22px;line-height:1.3;color:#04244d">${esc(title)}</h1>
 ${bodyHtml}
-<p style="margin:22px 0 0;padding:12px 14px;background:#fff6e5;border-radius:10px;font-size:13px;color:#5d4a1f"><b>Please do not reply to this email</b> — replies are not read. ${wa ? `For any questions, message ${clinic} on <a href="https://wa.me/${wa}" style="color:#005293">WhatsApp</a>.` : `For any questions, please contact ${clinic}.`}</p>
+${forDoctor ? `<p style="margin:22px 0 0;padding:12px 14px;background:#fff6e5;border-radius:10px;font-size:13px;color:#5d4a1f"><b>Automatic message from your online clinic — please do not reply.</b> Manage bookings in your dashboard.</p>` : `<p style="margin:22px 0 0;padding:12px 14px;background:#fff6e5;border-radius:10px;font-size:13px;color:#5d4a1f"><b>Please do not reply to this email</b> — replies are not read. ${wa ? `For any questions, message ${clinic} on <a href="https://wa.me/${wa}" style="color:#005293">WhatsApp</a>.` : `For any questions, please contact ${clinic}.`}</p>`}
 </div>
-<p style="text-align:center;font-size:11px;color:#8aa0a8;margin:14px 0 0">Sent for ${clinic}.</p>
+<p style="text-align:center;font-size:11px;color:#8aa0a8;margin:14px 0 0">${forDoctor ? "DotCom by Arshees · booking system" : `Sent for ${clinic}.`}</p>
 </div></body></html>`;
 }
 function card(rows) {
@@ -127,6 +127,49 @@ export function bookingEmail(env, doc, b, kind, many) {
       `${hi}${card(rows)}${manage ? btn(manage, "View, change or cancel") : ""}`]
   }[kind];
   return T ? { to: b.email, subject: T[0], html: shell(env, T[1], T[2]) } : null;
+}
+
+/* ---------- emails to the doctor (their own existing email, "email" in DOCTORS_JSON) ---------- */
+function feeFor(env, doc, slug) {
+  let sc = doc.schedule; if (!sc) { try { sc = JSON.parse(env.SCHEDULE_JSON || "{}"); } catch (e) { sc = {}; } }
+  const t = sc && sc.types && sc.types[slug];
+  return t && Number(t.fee) > 0 ? Number(t.fee) : 0;
+}
+export function doctorEmail(env, doc, b, kind, many) {
+  if (!doc.email) return null;
+  const site = String(env.SITE_URL || "").replace(/\/?$/, "/");
+  const dash = site + "doctor.html";
+  const room = `${site}consult.html${doc.id !== "main" ? "?d=" + encodeURIComponent(doc.id) : ""}`;
+  const tz = env.TIMEZONE || "Asia/Kolkata";
+  const fee = feeFor(env, doc, b.slug);
+  const pay = fee ? `₹${fee}${b.utr ? " · UPI ref " + b.utr : " · no UPI reference given"}` : (b.utr ? "UPI ref " + b.utr : "");
+  const rows = [["Patient", b.name || ""], ["Consultation", b.title || "Consultation"], ["Date & time", when(b.start, tz)]]
+    .concat(b.phone ? [["WhatsApp", b.phone]] : []).concat(pay ? [["Payment", pay]] : []).concat(b.reason ? [["Reason", b.reason]] : []);
+  const hi = `<p style="margin:0 0 14px;font-size:15px">Dear ${esc(doc.name || "Doctor")},</p>`;
+  const who = esc(b.name || "A patient");
+  const nm = String(b.name || "Patient").replace(/[<>\r\n]/g, "").slice(0, 60);   // plain text for the subject line
+  const T = {
+    request: [`New booking request – please check payment – ${nm}`, "New booking request — check the payment",
+      `${hi}<p style="margin:0 0 16px;font-size:15px">${who} has booked and says they paid by UPI. Please check your UPI / bank app for the payment, then confirm or decline in your dashboard.</p>${card(rows)}${btn(dash, "Open dashboard to confirm")}`],
+    booked: [`New appointment – ${nm}`, "New appointment booked", `${hi}${card(rows)}${btn(dash, "Open dashboard")}`],
+    confirmed: [`Payment confirmed – appointment booked – ${nm}`, "Payment confirmed — appointment booked",
+      `${hi}<p style="margin:0 0 16px;font-size:15px">You confirmed the payment. The appointment is booked and ${who} has been emailed.</p>${card(rows)}${btn(dash, "Open dashboard")}`],
+    declined: [`Booking declined – ${nm}`, "Booking declined",
+      `${hi}<p style="margin:0 0 16px;font-size:15px">You declined this booking and ${who} has been told. If they paid, please refund them by UPI.</p>${card(rows)}`],
+    cancelledByDoctor: [`Appointment cancelled – ${nm}`, "You cancelled an appointment",
+      `${hi}<p style="margin:0 0 16px;font-size:15px">${who} has been told. If they paid, please refund them by UPI.</p>${card(rows)}`],
+    cancelledByPatient: [`Patient cancelled – ${nm}`, "A patient cancelled their appointment",
+      `${hi}<p style="margin:0 0 16px;font-size:15px">${who} cancelled. The time is free again for other patients. If they paid, please arrange the refund by UPI.</p>${card(rows)}${btn(dash, "Open dashboard")}`],
+    rescheduled: [`Patient changed the time – ${nm}`, "A patient changed their appointment time",
+      `${hi}<p style="margin:0 0 16px;font-size:15px">${who} moved their appointment to the new time below.</p>${card(rows)}${btn(dash, "Open dashboard")}`],
+    reminder24: [`Tomorrow: consultation with ${nm}`, "You have a consultation tomorrow", `${hi}${card(rows)}${btn(dash, "Open dashboard")}`],
+    reminder1: [`In 1 hour: consultation with ${nm}`, "Your consultation starts in about an hour", `${hi}${card(rows)}${btn(room, "Open consultation room")}<p style="margin:0;font-size:14px"><a href="${esc(dash)}" style="color:#005293">Open dashboard</a></p>`]
+  }[kind];
+  return T ? { to: doc.email, subject: T[0], html: shell(env, T[1], T[2], true) } : null;
+}
+export async function emailDoctor(env, doc, b, kind, many) {
+  const m = doctorEmail(env, doc, b, kind, many);
+  if (m) return sendMail(env, m);
 }
 
 export async function emailPatient(env, doc, b, kind, many) {

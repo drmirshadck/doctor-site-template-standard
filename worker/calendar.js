@@ -12,7 +12,7 @@
  *   list, confirm, decline, dcancel, export   (doctor dashboard, after PIN login)
  *   schedule, setSchedule                     (doctor dashboard: timetable + leave)
  */
-import { emailPatient, manageToken } from "./mail.js";
+import { emailPatient, emailDoctor, manageToken } from "./mail.js";
 
 const DAY = 864e5;
 export const DEFAULT_SCHEDULE = {
@@ -82,7 +82,9 @@ export class Calendar {
       this.sql.exec(kind === "reminder1" ? `UPDATE bookings SET r1 = 1, r24 = 1 WHERE id = ?` : `UPDATE bookings SET r24 = 1 WHERE id = ?`, r.id);
       const v = await this.view(r);
       const t = await manageToken(this.env, meta.id, r.id);
-      await emailPatient(this.env, { id: meta.id, name: meta.name }, { ...v, t }, kind, meta.many).catch(e => console.log("reminder email failed", String(e && e.message || e)));
+      const doc = { id: meta.id, name: meta.name, email: meta.email || "" };
+      await emailPatient(this.env, doc, { ...v, t }, kind, meta.many).catch(e => console.log("reminder email failed", String(e && e.message || e)));
+      await emailDoctor(this.env, doc, v, kind, meta.many).catch(e => console.log("doctor reminder email failed", String(e && e.message || e)));
     }
   }
   meta() { const row = this.sql.exec(`SELECT v FROM kv WHERE k = 'who'`).toArray()[0]; try { return row ? JSON.parse(row.v) : {}; } catch (e) { return {}; } }
@@ -146,7 +148,7 @@ export class Calendar {
 
   /* ---------- ops ---------- */
   async op(a) {
-    if (a.who && a.who.id) this.sql.exec(`INSERT INTO kv (k, v) VALUES ('who', ?) ON CONFLICT(k) DO UPDATE SET v = excluded.v`, JSON.stringify({ id: a.who.id, name: a.who.name, many: !!a.who.many }));
+    if (a.who && a.who.id) this.sql.exec(`INSERT INTO kv (k, v) VALUES ('who', ?) ON CONFLICT(k) DO UPDATE SET v = excluded.v`, JSON.stringify({ id: a.who.id, name: a.who.name, email: a.who.email || "", many: !!a.who.many }));
     try { return await this.op2(a); } finally { await this.ensureAlarm(); }
   }
   async op2(a) {

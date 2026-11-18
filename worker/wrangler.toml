@@ -14,7 +14,8 @@ CALENDAR = "own"
 TIMEZONE = "Asia/Kolkata"
 RETAIN_DAYS = "365"          # bookings are deleted this many days after the appointment
 CHANGE_CUTOFF_HOURS = "2"    # patients can cancel / change time online until this many hours before
-# Starting timetable (the doctor changes it later in the dashboard). Type slugs = calSlug in config.js.
+# Starting timetable (the doctor changes it later in the dashboard). Type slugs = calSlug in config.js; "fee" (₹) shows in the doctor's payment-check email.
+# Doctor emails: add "email" (the doctor's own existing email) to each DOCTORS_JSON entry, or DOCTOR_EMAIL for one doctor.
 # Patient emails (mail.js), own calendar only: Zoho ZeptoMail, sender name = CLINIC_NAME, secret ZEPTO_TOKEN
 # EMAIL_PROVIDER = "zeptomail"
 # EMAIL_FROM = "yourbooking@arshees.com"

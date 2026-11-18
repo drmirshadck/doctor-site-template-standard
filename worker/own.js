@@ -41,7 +41,7 @@ export async function ownPublic(req, env, url, p, doctors, hooks = {}) {
     const patient = { name, email, phone, notes: String(b.notes || "").trim().slice(0, 800), utr: String(b.utr || "").replace(/\D/g, "").slice(0, 12), tz: tzOk(b.tz) };
     const r = await call(env, doc, { op: "create", slug: slug(b.slug), start: new Date(b.start).toISOString(), patient });
     const t = await manageToken(env, doc.id, r.uid);
-    if (hooks.onNew) await safe(() => hooks.onNew(doc, { ...r, ...patient, t }));
+    if (hooks.onNew) await safe(() => hooks.onNew(doc, { ...r, ...patient, t, slug: slug(b.slug) }));
     return ok({ uid: r.uid, status: r.status, start: r.start, end: r.end, email, t, emails: !!(env.EMAIL_FROM && (env.ZEPTO_TOKEN || env.ZOHO_REFRESH_TOKEN)) });
   }
   // patient's manage link
@@ -94,7 +94,7 @@ function pick(doctors, id) {
 async function call(env, doc, msg) {
   if (!env.CALS) throw bad(500, "The calendar is not set up yet.");
   const stub = env.CALS.get(env.CALS.idFromName(doc.id));
-  const r = await stub.fetch("https://calendar/", { method: "POST", body: JSON.stringify({ ...msg, defaults: defaultsFor(env, doc), who: { id: doc.id, name: doc.name, many: (() => { try { return JSON.parse(env.DOCTORS_JSON || "[]").length > 1; } catch (e) { return false; } })() } }) });
+  const r = await stub.fetch("https://calendar/", { method: "POST", body: JSON.stringify({ ...msg, defaults: defaultsFor(env, doc), who: { id: doc.id, name: doc.name, email: doc.email || "", many: (() => { try { return JSON.parse(env.DOCTORS_JSON || "[]").length > 1; } catch (e) { return false; } })() } }) });
   const d = await r.json().catch(() => ({}));
   if (!r.ok) throw bad(r.status, d.error || "Something went wrong. Please try again.");
   return d;

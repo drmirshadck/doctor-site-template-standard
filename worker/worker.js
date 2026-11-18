@@ -38,7 +38,7 @@
  */
 import { bookRoute, isBookPath } from "./book.js";
 import { isOwnPublic, isOwnDoctor, ownPublic, ownDoctor } from "./own.js";
-import { emailPatient } from "./mail.js";
+import { emailPatient, emailDoctor } from "./mail.js";
 export { Calendar } from "./calendar.js";   // OWN CALENDAR (Durable Object, one per doctor)
 
 const CAL = "https://api.cal.com/v2";
@@ -110,10 +110,10 @@ function jmap(env, k) { try { return JSON.parse(env[k] || "{}") || {}; } catch (
 function doctors(env) {
   let list = []; try { list = JSON.parse(env.DOCTORS_JSON || "[]"); } catch (e) {}
   if (!Array.isArray(list) || !list.length) {
-    return [{ id: "main", name: env.DOCTOR_NAME || "Doctor", roomUrl: env.DAILY_ROOM_URL || "", calKey: env.CAL_API_KEY, dailyKey: env.DAILY_API_KEY, pinHash: env.PIN_HASH }];
+    return [{ id: "main", name: env.DOCTOR_NAME || "Doctor", roomUrl: env.DAILY_ROOM_URL || "", calKey: env.CAL_API_KEY, dailyKey: env.DAILY_API_KEY, pinHash: env.PIN_HASH, email: env.DOCTOR_EMAIL || "" }];
   }
   const pins = jmap(env, "PINS"), cals = jmap(env, "CAL_KEYS"), dailies = jmap(env, "DAILY_KEYS");
-  return list.filter(d => d && /^[a-z0-9-]{1,40}$/i.test(d.id || "")).map(d => ({ id: d.id, name: d.name || "Doctor", roomUrl: d.roomUrl || "", calKey: cals[d.id], dailyKey: dailies[d.id], pinHash: pins[d.id], schedule: d.schedule }));
+  return list.filter(d => d && /^[a-z0-9-]{1,40}$/i.test(d.id || "")).map(d => ({ id: d.id, name: d.name || "Doctor", roomUrl: d.roomUrl || "", calKey: cals[d.id], dailyKey: dailies[d.id], pinHash: pins[d.id], schedule: d.schedule, email: /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(d.email || "") ? d.email : "" }));
 }
 const subsKey = d => d.id === "main" ? "subs" : "subs:" + d.id;
 
@@ -124,10 +124,15 @@ function hooks(env) {
     await env.PUSH.put("lastEvent", JSON.stringify({ type, at: Date.now(), doctor: many ? doc.name : "" }));
     await pushAll(env, subsKey(doc));
   };
-  const mail = (doc, b, kind) => emailPatient(env, doc, b, kind, many).catch(e => console.log("email failed", kind, String(e && e.message || e)));
+  const log = kind => e => console.log("email failed", kind, String(e && e.message || e));
+  // the patient and the doctor both get an email for every step (doctor: their own email from DOCTORS_JSON)
+  const mail = async (doc, b, kind, dkind) => {
+    await emailPatient(env, doc, b, kind, many).catch(log(kind));
+    await emailDoctor(env, doc, b, dkind || kind, many).catch(log("doctor " + (dkind || kind)));
+  };
   return {
     // phone alerts to the doctor never carry patient details; emails go only to that booking's patient
-    onNew: async (doc, b) => { await alert(doc, b.status === "pending" ? "request" : "created"); await mail(doc, b, b.status === "pending" ? "received" : "booked"); },
+    onNew: async (doc, b) => { await alert(doc, b.status === "pending" ? "request" : "created"); await mail(doc, b, b.status === "pending" ? "received" : "booked", b.status === "pending" ? "request" : "booked"); },
     onChange: async (doc, b, what) => {
       if (what === "confirmed") return mail(doc, b, "confirmed");
       if (what === "declined") return mail(doc, b, "declined");
