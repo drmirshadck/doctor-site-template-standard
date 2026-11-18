@@ -27,9 +27,17 @@ SCHEDULE_JSON = '''{"tz":"Asia/Kolkata","week":{"1":[["08:00","12:00"],["16:00",
 name = "CALS"
 class_name = "Calendar"
 
+[[durable_objects.bindings]]
+name = "ROOMS"          # own video: one room per consultation (connection messages only, nothing stored)
+class_name = "Room"
+
 [[migrations]]
 tag = "v1"
 new_sqlite_classes = ["Calendar"]
+
+[[migrations]]
+tag = "v2"
+new_sqlite_classes = ["Room"]
 
 [[kv_namespaces]]
 binding = "PUSH"

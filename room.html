@@ -1,0 +1,198 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="robots" content="noindex,nofollow">
+<title>Consultation room</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Outfit:wght@500;600;700;800&family=Nunito+Sans:opsz,wght@6..12,400;6..12,600;6..12,700&display=swap">
+<script>document.write('<script src="config.js?v=' + Date.now() + '"><\/script>')</script>
+<!-- DotCom by Arshees — own video room. The doctor and patient connect directly (WebRTC); when a network blocks that,
+     the call is relayed by Cloudflare. The website's helper only checks the booking and passes connection messages. -->
+<style>
+  :root{--brand:#0e6f78;--brand-deep:#074a50;--accent:#e9a23b}
+  *{box-sizing:border-box;margin:0}
+  html,body{height:100%;background:#0b1416;color:#fff;font-family:"Nunito Sans",system-ui,sans-serif}
+  .top{position:fixed;top:0;left:0;right:0;z-index:5;display:flex;align-items:center;gap:12px;padding:calc(10px + env(safe-area-inset-top)) 16px 10px;background:linear-gradient(#0b1416e6,#0b141600)}
+  .top b{font:700 1rem Outfit,sans-serif}.top small{opacity:.75;display:block;font-size:.8rem}
+  .top .dot{width:9px;height:9px;border-radius:50%;background:#7b8a8c;flex:none}.top .dot.on{background:#3ad07a}
+  .top .timer{margin-left:auto;font:600 .9rem Outfit;opacity:.85}
+  #remote{position:fixed;inset:0;width:100%;height:100%;object-fit:cover;background:#0b1416}
+  #local{position:fixed;right:14px;bottom:calc(104px + env(safe-area-inset-bottom));width:112px;height:150px;object-fit:cover;border-radius:16px;border:2px solid #ffffff40;background:#1d2b2e;z-index:4;transform:scaleX(-1)}
+  #local.back{transform:none}
+  @media (min-width:800px){#local{width:220px;height:150px}}
+  .bar{position:fixed;left:0;right:0;bottom:0;z-index:5;display:flex;justify-content:center;gap:14px;padding:16px 16px calc(22px + env(safe-area-inset-bottom));background:linear-gradient(#0b141600,#0b1416e6)}
+  .bar button{width:58px;height:58px;border-radius:50%;border:0;background:#ffffff26;color:#fff;font-size:1.35rem;cursor:pointer;display:grid;place-items:center}
+  .bar button.off{background:#fff;color:#0b1416}
+  .bar button.end{background:#d93a33;width:70px;border-radius:30px}
+  .bar button svg{width:26px;height:26px}
+  .center{position:fixed;inset:0;display:grid;place-items:center;z-index:3;padding:24px;text-align:center;pointer-events:none}
+  .center .card{max-width:420px;pointer-events:auto}
+  .center h1{font:700 1.35rem Outfit,sans-serif;margin-bottom:8px}.center p{opacity:.82;line-height:1.5}
+  .center .btn{display:inline-block;margin-top:18px;padding:13px 22px;border-radius:999px;background:var(--accent);color:#1d1d1d;font-weight:800;border:0;font-size:1rem;cursor:pointer;text-decoration:none}
+  .pulse{width:74px;height:74px;border-radius:50%;margin:0 auto 18px;background:var(--brand);box-shadow:0 0 0 0 #0e6f7899;animation:p 1.8s infinite}
+  @keyframes p{70%{box-shadow:0 0 0 26px #0e6f7800}100%{box-shadow:0 0 0 0 #0e6f7800}}
+  .hide{display:none!important}
+  .net{position:fixed;top:calc(64px + env(safe-area-inset-top));left:50%;transform:translateX(-50%);z-index:6;background:#00000099;padding:7px 14px;border-radius:999px;font-size:.85rem}
+</style>
+</head>
+<body>
+<video id="remote" autoplay playsinline></video>
+<video id="local" autoplay playsinline muted class="hide"></video>
+<div class="top hide" id="top"><span class="dot" id="dot"></span><div><b id="who">Consultation</b><small id="sub"></small></div><span class="timer" id="timer"></span></div>
+<div class="net hide" id="net">Reconnecting…</div>
+<div class="center" id="center"><div class="card"><div class="pulse"></div><h1>Opening your consultation room…</h1><p></p></div></div>
+<div class="bar hide" id="bar">
+  <button id="mic" title="Microphone" aria-label="Microphone"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="2" width="6" height="12" rx="3"/><path d="M5 10a7 7 0 0 0 14 0M12 17v5"/></svg></button>
+  <button id="cam" title="Camera" aria-label="Camera"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="6" width="14" height="12" rx="2"/><path d="M16 10l6-3v10l-6-3z"/></svg></button>
+  <button id="flip" title="Switch camera" aria-label="Switch camera"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 8h3l2-3h6l2 3h3v11H4z"/><path d="M9.5 13.5a2.5 2.5 0 0 0 5 0M14.5 13.5l1.5-1.5M9.5 13.5L8 15"/></svg></button>
+  <button id="end" class="end" title="Leave" aria-label="Leave"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 9c-3.2 0-6.2.9-8.6 2.6-.5.4-.6 1.1-.3 1.6l1.6 2.3c.4.5 1.1.7 1.6.4l2.3-1.2c.4-.2.7-.7.7-1.2v-1.6c1.8-.5 3.6-.5 5.4 0v1.6c0 .5.3 1 .7 1.2l2.3 1.2c.5.3 1.2.1 1.6-.4l1.6-2.3c.3-.5.2-1.2-.3-1.6C18.2 9.9 15.2 9 12 9z"/></svg></button>
+</div>
+<script>
+(function () {
+const S = window.SITE || {}, $ = id => document.getElementById(id);
+if (S.theme) { const r = document.documentElement.style; r.setProperty("--brand", S.theme.brand); r.setProperty("--brand-deep", S.theme.brandDeep); r.setProperty("--accent", S.theme.accent); }
+const API = ((S.helper && S.helper.url) || "").replace(/\/$/, "");
+const q = new URLSearchParams(location.search);
+const A = { d: q.get("d") || "main", b: q.get("b") || "", t: q.get("t") || "" };
+const host = q.get("host") === "1";
+const hostToken = host ? (sessionStorage.getItem("dcbHost") || localStorage.getItem("docToken") || "") : "";
+const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+const home = host ? "doctor.html" : "./";
+
+let J = null, ws = null, pc = null, local = null, polite = true, makingOffer = false, ignoreOffer = false;
+let wsTries = 0, ended = false, connectedAt = 0, tick = null, facing = "user", pending = [];
+
+function show(title, text, btn) {
+  $("center").classList.remove("hide");
+  $("center").innerHTML = `<div class="card">${btn === "wait" ? '<div class="pulse"></div>' : ""}<h1>${esc(title)}</h1><p>${text || ""}</p>${btn && btn !== "wait" ? btn : ""}</div>`;
+}
+const hideCenter = () => $("center").classList.add("hide");
+
+async function join() {
+  if (!API) return show("Room not available", "This website's consultation room is not set up yet.", `<a class="btn" href="${home}">Back</a>`);
+  if (!A.b || (!host && !A.t)) return show("Please use your consultation link", "Open the <b>Consultation room</b> link from your booking email, or the <b>Change or cancel</b> page.", `<a class="btn" href="./">Back to website</a>`);
+  if (host && !hostToken) return show("Please log in", "Open the room from your dashboard (Start call).", `<a class="btn" href="doctor.html">Open dashboard</a>`);
+  let r, j;
+  try {
+    r = await fetch(API + "/video/join", { method: "POST", headers: Object.assign({ "Content-Type": "application/json" }, host ? { Authorization: "Bearer " + hostToken } : {}), body: JSON.stringify(A) });
+    j = await r.json();
+  } catch (e) { return show("No connection", "Please check your internet and try again.", `<button class="btn" onclick="location.reload()">Try again</button>`); }
+  if (j.wait) {
+    const at = new Date(j.opens), when = at.toLocaleString([], { weekday: "short", day: "numeric", month: "short", hour: "numeric", minute: "2-digit" });
+    show("Your room is not open yet", `It opens at <b>${esc(when)}</b> (your time). Keep this page open — it opens by itself.`, "wait");
+    setTimeout(join, Math.min(Math.max(at - Date.now() + 1000, 5000), 60000));
+    return;
+  }
+  if (!r.ok || !j.ok) return show("Can't open the room", esc(j.error || "Please try again."), `<a class="btn" href="${home}">Back</a>`);
+  J = j; polite = j.role === "patient";
+  $("who").textContent = j.other || "Consultation"; $("sub").textContent = j.title || "";
+  $("top").classList.remove("hide");
+  try {
+    local = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true }, video: { facingMode: facing, width: { ideal: 1280 }, height: { ideal: 720 } } });
+  } catch (e) {
+    try { local = await navigator.mediaDevices.getUserMedia({ audio: true }); } catch (e2) {
+      return show("Allow camera and microphone", "Your browser blocked the camera and microphone. Allow them for this website (tap the lock or camera icon in the address bar) and try again.", `<button class="btn" onclick="location.reload()">Try again</button>`);
+    }
+  }
+  $("local").srcObject = local; $("local").classList.remove("hide"); $("bar").classList.remove("hide");
+  waiting();
+  connect();
+}
+
+function waiting() {
+  show(J.role === "doctor" ? "Waiting for your patient" : "Waiting for the doctor",
+    J.role === "doctor" ? "Your patient will appear here as soon as they join." : `${esc(J.other)} will join you here. Please stay on this page.`, "wait");
+  $("dot").classList.remove("on");
+}
+
+/* signalling: the website's helper passes messages between the two sides */
+function connect() {
+  if (ended) return;
+  const u = API.replace(/^http/, "ws") + "/video/ws?ticket=" + encodeURIComponent(J.ticket);
+  ws = new WebSocket(u);
+  ws.onopen = () => { wsTries = 0; $("net").classList.add("hide"); };
+  ws.onmessage = e => { if (e.data !== "pong") onMsg(JSON.parse(e.data)).catch(err => console.warn(err)); };
+  ws.onclose = ev => {
+    if (ended) return;
+    if (ev.code === 4000) { ended = true; cleanup(); return show("Opened on another screen", "This consultation is open on another device or tab.", `<a class="btn" href="${home}">Back</a>`); }
+    $("net").classList.remove("hide");
+    setTimeout(connect, Math.min(1000 * 2 ** wsTries++, 8000));
+  };
+}
+const send = o => { if (ws && ws.readyState === 1) ws.send(JSON.stringify(o)); };
+setInterval(() => { if (ws && ws.readyState === 1) ws.send("ping"); }, 25000);
+
+function newPC() {
+  if (pc) { try { pc.close(); } catch (e) {} }
+  pending = [];
+  pc = new RTCPeerConnection({ iceServers: J.iceServers || [] });
+  local.getTracks().forEach(t => pc.addTrack(t, local));
+  pc.ontrack = e => { $("remote").srcObject = e.streams[0]; };
+  pc.onicecandidate = e => { if (e.candidate) send({ type: "ice", c: e.candidate }); };
+  pc.onnegotiationneeded = async () => {
+    try { makingOffer = true; await pc.setLocalDescription(); send({ type: "sdp", d: pc.localDescription }); }
+    catch (e) { console.warn(e); } finally { makingOffer = false; }
+  };
+  pc.onconnectionstatechange = () => {
+    const s = pc.connectionState;
+    if (s === "connected") {
+      hideCenter(); $("dot").classList.add("on"); $("net").classList.add("hide");
+      if (!connectedAt) { connectedAt = Date.now(); tick = setInterval(() => { const m = Math.floor((Date.now() - connectedAt) / 1000); $("timer").textContent = String(Math.floor(m / 60)).padStart(2, "0") + ":" + String(m % 60).padStart(2, "0"); }, 1000); }
+    } else if (s === "disconnected") { $("net").classList.remove("hide"); }
+    else if (s === "failed") { try { pc.restartIce(); } catch (e) {} }
+  };
+}
+
+async function onMsg(m) {
+  if (m.type === "welcome") { if (m.peers && m.peers.length) newPC(); return; }
+  if (m.type === "peer-joined") { newPC(); return; }
+  if (m.type === "peer-left") { if (pc) { try { pc.close(); } catch (e) {} pc = null; } $("remote").srcObject = null; waiting(); return; }
+  if (m.type === "bye") { if (pc) { try { pc.close(); } catch (e) {} pc = null; } $("remote").srcObject = null; waiting(); return; }
+  if (!pc) newPC();
+  if (m.type === "sdp") {
+    const d = m.d, collision = d.type === "offer" && (makingOffer || pc.signalingState !== "stable");
+    ignoreOffer = !polite && collision;
+    if (ignoreOffer) return;
+    await pc.setRemoteDescription(d);
+    for (const c of pending.splice(0)) { try { await pc.addIceCandidate(c); } catch (e) {} }
+    if (d.type === "offer") { await pc.setLocalDescription(); send({ type: "sdp", d: pc.localDescription }); }
+  } else if (m.type === "ice") {
+    if (!pc.remoteDescription) { pending.push(m.c); return; }
+    try { await pc.addIceCandidate(m.c); } catch (e) { if (!ignoreOffer) console.warn(e); }
+  }
+}
+
+/* buttons */
+$("mic").onclick = () => { const t = local && local.getAudioTracks()[0]; if (!t) return; t.enabled = !t.enabled; $("mic").classList.toggle("off", !t.enabled); };
+$("cam").onclick = () => { const t = local && local.getVideoTracks()[0]; if (!t) return; t.enabled = !t.enabled; $("cam").classList.toggle("off", !t.enabled); };
+$("flip").onclick = async () => {
+  const old = local && local.getVideoTracks()[0]; if (!old) return;
+  facing = facing === "user" ? "environment" : "user";
+  try {
+    const s = await navigator.mediaDevices.getUserMedia({ video: { facingMode: facing } });
+    const nt = s.getVideoTracks()[0]; nt.enabled = old.enabled;
+    if (pc) { const sender = pc.getSenders().find(x => x.track && x.track.kind === "video"); if (sender) await sender.replaceTrack(nt); }
+    local.removeTrack(old); old.stop(); local.addTrack(nt);
+    $("local").srcObject = local; $("local").classList.toggle("back", facing === "environment");
+  } catch (e) { facing = facing === "user" ? "environment" : "user"; }
+};
+$("end").onclick = () => {
+  ended = true; send({ type: "bye" }); cleanup();
+  show("You left the consultation", J && J.role === "doctor" ? "You can open the room again from your dashboard." : "Thank you. If you were disconnected by mistake, open your consultation link again.", `<a class="btn" href="${home}">${J && J.role === "doctor" ? "Back to dashboard" : "Back to website"}</a>`);
+};
+function cleanup() {
+  clearInterval(tick);
+  if (pc) { try { pc.close(); } catch (e) {} pc = null; }
+  if (ws) { try { ws.close(); } catch (e) {} }
+  if (local) local.getTracks().forEach(t => t.stop());
+  $("bar").classList.add("hide"); $("local").classList.add("hide"); $("remote").srcObject = null; $("net").classList.add("hide");
+}
+window.addEventListener("pagehide", () => { if (!ended) send({ type: "bye" }); });
+
+join();
+})();
+</script>
+</body>
+</html>

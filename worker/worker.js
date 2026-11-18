@@ -41,6 +41,8 @@
 import { bookRoute, isBookPath } from "./book.js";
 import { isOwnPublic, isOwnDoctor, ownPublic, ownDoctor } from "./own.js";
 import { emailPatient, emailDoctor } from "./mail.js";
+import { isVideoPath, videoRoute } from "./video.js";
+export { Room } from "./video.js";        // OWN VIDEO (Durable Object, one per consultation)
 export { Calendar } from "./calendar.js";   // OWN CALENDAR (Durable Object, one per doctor)
 
 const CAL = "https://api.cal.com/v2";
@@ -52,6 +54,8 @@ export default {
     const url = new URL(req.url);
     const cors = corsHeaders(req, env);
     if (req.method === "OPTIONS") return new Response(null, { status: cors ? 204 : 403, headers: cors || {} });
+    // video room WebSocket: answered as it is (no extra headers on a 101 response)
+    if (url.pathname === "/video/ws") { try { return await videoRoute(req, env, url, "/video/ws", videoOpts(env)); } catch (e) { return json({ error: e.publicMessage || "Something went wrong." }, e.status || 500); } }
     try {
       const r = await route(req, env, url, !!cors, ctx);
       if (cors) for (const [k, v] of Object.entries(cors)) r.headers.set(k, v);
@@ -77,6 +81,7 @@ async function route(req, env, url, fromSite, ctx) {
   if (!fromSite) throw err(403, "Not allowed.");
   if (p === "/login" && M === "POST") return login(req, env);
   const own = env.CALENDAR === "own";
+  if (own && isVideoPath(p)) return videoRoute(req, env, url, p, videoOpts(env, ctx));
   if (own && isOwnPublic(p)) return ownPublic(req, env, url, p, doctors(env), hooks(env, ctx));
   if (!own && isBookPath(p)) return bookRoute(req, url, p, async id => { const d = doctors(env).find(x => x.id === id) || (doctors(env).length === 1 ? doctors(env)[0] : null); return d && d.calKey ? { key: d.calKey, username: "" } : null; }, env.PUSH);
 
@@ -118,6 +123,23 @@ function doctors(env) {
   return list.filter(d => d && /^[a-z0-9-]{1,40}$/i.test(d.id || "")).map(d => ({ id: d.id, name: d.name || "Doctor", roomUrl: d.roomUrl || "", calKey: cals[d.id], dailyKey: dailies[d.id], pinHash: pins[d.id], schedule: d.schedule, email: /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(d.email || "") ? d.email : "" }));
 }
 const subsKey = d => d.id === "main" ? "subs" : "subs:" + d.id;
+
+/* ---------- own video: who is the doctor, and "patient is waiting" alert ---------- */
+function videoOpts(env, ctx) {
+  return {
+    doctors: doctors(env), json, err,
+    whoAmI: async r => (await requireSession(r, env)).id,
+    onWaiting: async doc => {
+      if (env.PLAN === "starter") return;                       // Starter: no phone alerts
+      const k = "wait:" + doc.id;
+      if (await env.PUSH.get(k)) return;                        // at most one alert every 2 minutes
+      await env.PUSH.put(k, "1", { expirationTtl: 120 });
+      const many = doctors(env).length > 1;
+      const p = (async () => { await env.PUSH.put("lastEvent", JSON.stringify({ type: "waiting", at: Date.now(), doctor: many ? doc.name : "" })); await pushAll(env, subsKey(doc)); })();
+      if (ctx) ctx.waitUntil(p); else await p;
+    }
+  };
+}
 
 /* ---------- own calendar: phone alert to the doctor (no patient details in the alert) ---------- */
 function hooks(env, ctx) {

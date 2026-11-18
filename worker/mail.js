@@ -98,10 +98,18 @@ function card(rows) {
 }
 const btn = (href, label) => `<p style="margin:0 0 10px"><a href="${esc(href)}" style="display:inline-block;background:#005293;color:#ffffff;text-decoration:none;font-weight:bold;padding:12px 20px;border-radius:999px;font-size:14px">${esc(label)}</a></p>`;
 
+/* consultation room: the website's own video room (room.html) for the patient's booking; the doctor's link opens it as host */
+export function roomLink(env, doc, b, asDoctor) {
+  const site = String(env.SITE_URL || "").replace(/\/?$/, "/");
+  const d = doc.id !== "main" ? "d=" + encodeURIComponent(doc.id) + "&" : "";
+  if (!b || !b.uid) return site + "room.html";
+  if (asDoctor) return `${site}room.html?${d}b=${encodeURIComponent(b.uid)}&host=1`;
+  return b.t ? `${site}room.html?${d}b=${encodeURIComponent(b.uid)}&t=${encodeURIComponent(b.t)}` : `${site}manage.html?${d}b=${encodeURIComponent(b.uid)}`;
+}
 export function bookingEmail(env, doc, b, kind, many) {
   const site = String(env.SITE_URL || "").replace(/\/?$/, "/");
   const manage = b.t ? `${site}manage.html?d=${encodeURIComponent(doc.id)}&b=${encodeURIComponent(b.uid)}&t=${encodeURIComponent(b.t)}` : "";
-  const room = `${site}consult.html${doc.id !== "main" ? "?d=" + encodeURIComponent(doc.id) : ""}`;
+  const room = roomLink(env, doc, b);
   const tz = b.tz || env.TIMEZONE || "Asia/Kolkata";
   const rows = [["Consultation", b.title || "Consultation"]].concat(many ? [["Doctor", doc.name]] : []).concat([["Date & time", when(b.start, tz)], ["Patient", b.name || ""]]);
   const hi = `<p style="margin:0 0 14px;font-size:15px">Dear ${esc(b.name || "patient")},</p>`;
@@ -140,7 +148,7 @@ export function doctorEmail(env, doc, b, kind, many) {
   if (!doc.email) return null;
   const site = String(env.SITE_URL || "").replace(/\/?$/, "/");
   const dash = site + "doctor.html";
-  const room = `${site}consult.html${doc.id !== "main" ? "?d=" + encodeURIComponent(doc.id) : ""}`;
+  const room = roomLink(env, doc, b, true);
   const tz = env.TIMEZONE || "Asia/Kolkata";
   const fee = feeFor(env, doc, b.slug);
   const pay = fee ? `₹${fee}${b.utr ? " · UPI ref " + b.utr : " · no UPI reference given"}` : (b.utr ? "UPI ref " + b.utr : "");

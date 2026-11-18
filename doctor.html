@@ -176,7 +176,9 @@ function card(b) {
   const ref = b.utr || upiRef(b.notes), ph = phoneDigits(b.phone);
   const other = b.notes.replace(/UPI ref:\s*\d{12}\s*(\(₹?\d+\))?/i, "").trim();
   const pend = tab === "pending";
-  const msg = `Hello ${b.name}, your consultation with ${D.name} is confirmed for ${day(b.start)} at ${time(b.start)} IST. Join here at that time: ${location.origin}${location.pathname.replace(/doctor\.html$/, "")}consult.html${roomQ()}`;
+  const base = location.origin + location.pathname.replace(/doctor\.html$/, "");
+  const link = (data.own && b.t) ? `${base}room.html?${me && me.id && me.id !== "main" ? "d=" + encodeURIComponent(me.id) + "&" : ""}b=${encodeURIComponent(b.uid)}&t=${encodeURIComponent(b.t)}` : `${base}consult.html${roomQ()}`;
+  const msg = `Hello ${b.name}, your consultation with ${D.name} is confirmed for ${day(b.start)} at ${time(b.start)} IST. Join here at that time: ${link}`;
   return `<div class="card${!pend && isToday(b.start) ? " today" : ""}">
     <div class="top"><div><h3>${esc(b.name)}</h3><div class="meta"><span>${esc(typeName(b.title))}</span></div></div>
       <div class="when">${isToday(b.start) ? "Today" : esc(day(b.start))}<small>${esc(time(b.start))}</small></div></div>
@@ -187,7 +189,7 @@ function card(b) {
     </div>
     <div class="acts">${pend
       ? `<button class="btn no" data-no="${esc(b.uid)}">Decline</button><button class="btn ok" data-ok="${esc(b.uid)}" data-name="${esc(b.name)}">Confirm</button>`
-      : `${ph ? `<a class="btn wa" href="https://wa.me/${ph}?text=${encodeURIComponent(msg)}" target="_blank" rel="noopener">Send link</a>` : ""}<button class="btn" data-call="1">Start call</button>${data.own ? `<button class="btn no" data-cx="${esc(b.uid)}">Cancel</button>` : ""}`}</div>
+      : `${ph ? `<a class="btn wa" href="https://wa.me/${ph}?text=${encodeURIComponent(msg)}" target="_blank" rel="noopener">Send link</a>` : ""}<button class="btn" data-call="1" data-uid="${esc(b.uid)}">Start call</button>${data.own ? `<button class="btn no" data-cx="${esc(b.uid)}">Cancel</button>` : ""}`}</div>
   </div>`;
 }
 async function confirmB(btn) {
@@ -222,6 +224,11 @@ async function openRoom() {
   catch (e) { $("main").innerHTML = `<div class="empty">${esc(e.message)}</div>`; }
 }
 async function startCall(btn) {
+  if (data.own && btn.dataset.uid) {   // own video room: the doctor joins this booking's room
+    try { sessionStorage.setItem("dcbHost", token); } catch (e) {}
+    location.href = `room.html?${me && me.id && me.id !== "main" ? "d=" + encodeURIComponent(me.id) + "&" : ""}b=${encodeURIComponent(btn.dataset.uid)}&host=1`;
+    return;
+  }
   btn.disabled = true; btn.textContent = "Opening…";
   try { const d = await api("/host-token", { method: "POST" }); location.href = "consult.html" + (roomQ() ? roomQ() + "&" : "?") + "host=" + encodeURIComponent(d.token); }
   catch (e) { toast(e.message); btn.disabled = false; btn.textContent = "Start call"; }

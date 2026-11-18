@@ -64,7 +64,7 @@ function show(msg) {
     ${msg ? `<p style="color:var(--teal);font-weight:700">${esc(msg)}</p>` : ""}
     <div class="summary"><div><span>${esc(bk.title)}${DOCS.length > 1 ? " · " + esc(DOC.name) : ""}</span><b>${esc(when(bk.start))}</b></div><div><span>Patient</span><b>${esc(bk.name)}</b></div><div><span>Status</span><span class="badge${gone ? " no" : ""}">${esc(label)}</span></div></div>
     ${TZ !== "Asia/Kolkata" ? `<p class="small">Times are shown in your time (${esc(TZ.replace(/_/g, " "))}).</p>` : ""}
-    ${!gone ? `<p class="small">At your time, join from the <a href="consult.html${A.d !== "main" ? "?d=" + encodeURIComponent(A.d) : ""}"><b>Consultation room</b></a>.</p>` : ""}
+    ${!gone ? `<p class="small">At your time, join from the <a href="room.html?${A.d !== "main" ? "d=" + encodeURIComponent(A.d) + "&" : ""}b=${encodeURIComponent(A.b)}&t=${encodeURIComponent(A.t)}"><b>Consultation room</b></a>.</p>` : ""}
     ${bk.canChange ? `<div class="row"><button class="btn btn-solid" id="ch">Change time</button><button class="btn btn-danger" id="cx">Cancel appointment</button></div>`
       : (!gone ? `<p class="small">This appointment can no longer be changed online.${contact()}</p>` : `<a class="btn btn-solid" href="./#book">Book a new appointment</a>`)}`;
   const ch = document.getElementById("ch"), cx = document.getElementById("cx");
