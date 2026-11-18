@@ -132,8 +132,9 @@ export function bookingEmail(env, doc, b, kind, many) {
 /* ---------- emails to the doctor (their own existing email, "email" in DOCTORS_JSON) ---------- */
 function feeFor(env, doc, slug) {
   let sc = doc.schedule; if (!sc) { try { sc = JSON.parse(env.SCHEDULE_JSON || "{}"); } catch (e) { sc = {}; } }
-  const t = sc && sc.types && sc.types[slug];
-  return t && Number(t.fee) > 0 ? Number(t.fee) : 0;
+  const t = sc && sc.types && sc.types[slug], p = doc.types && doc.types[slug];   // Pro: fee in DOCTORS_JSON types
+  const fee = Number(t && t.fee) || Number(p && p.fee) || 0;
+  return fee > 0 ? fee : 0;
 }
 export function doctorEmail(env, doc, b, kind, many) {
   if (!doc.email) return null;

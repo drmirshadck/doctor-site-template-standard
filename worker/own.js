@@ -91,7 +91,7 @@ function pick(doctors, id) {
   if (!d) throw bad(400, "This doctor is not open for online booking.");
   return d;
 }
-async function call(env, doc, msg) {
+export async function call(env, doc, msg) {
   if (!env.CALS) throw bad(500, "The calendar is not set up yet.");
   const stub = env.CALS.get(env.CALS.idFromName(doc.id));
   const r = await stub.fetch("https://calendar/", { method: "POST", body: JSON.stringify({ ...msg, defaults: defaultsFor(env, doc), who: { id: doc.id, name: doc.name, email: doc.email || "", many: (() => { try { return JSON.parse(env.DOCTORS_JSON || "[]").length > 1; } catch (e) { return false; } })() } }) });

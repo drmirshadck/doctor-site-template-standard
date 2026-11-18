@@ -11,6 +11,7 @@
  *   get, cancel, reschedule                   (patient's own manage link, token checked by the worker)
  *   list, confirm, decline, dcancel, export   (doctor dashboard, after PIN login)
  *   schedule, setSchedule                     (doctor dashboard: timetable + leave)
+ *   noshow, window                            (Pro: mark a patient absent; bookings in a time window for WhatsApp reminders)
  */
 import { emailPatient, emailDoctor, manageToken } from "./mail.js";
 
@@ -37,7 +38,7 @@ export class Calendar {
       status TEXT NOT NULL, created INTEGER NOT NULL, updated INTEGER NOT NULL, enc TEXT NOT NULL)`);
     this.sql.exec(`CREATE INDEX IF NOT EXISTS bk_start ON bookings(start)`);
     this.sql.exec(`CREATE TABLE IF NOT EXISTS kv (k TEXT PRIMARY KEY, v TEXT)`);
-    for (const col of ["r24", "r1"]) { try { this.sql.exec(`ALTER TABLE bookings ADD COLUMN ${col} INTEGER NOT NULL DEFAULT 0`); } catch (e) { /* already there */ } }
+    for (const col of ["r24", "r1", "absent"]) { try { this.sql.exec(`ALTER TABLE bookings ADD COLUMN ${col} INTEGER NOT NULL DEFAULT 0`); } catch (e) { /* already there */ } }
   }
 
   async fetch(req) {
@@ -214,7 +215,20 @@ export class Calendar {
         const now = Date.now();
         const rows = this.sql.exec(`SELECT * FROM bookings WHERE "end" > ? AND status IN ('pending','confirmed') ORDER BY start LIMIT 200`, now - 2 * 3600e3).toArray();
         const all = await Promise.all(rows.map(r => this.view(r)));
-        return { own: true, emails: !!(this.env.EMAIL_FROM && (this.env.ZEPTO_TOKEN || this.env.ZOHO_REFRESH_TOKEN)), pending: all.filter(b => b.status === "pending"), upcoming: all.filter(b => b.status === "confirmed") };
+        const past = this.sql.exec(`SELECT * FROM bookings WHERE "end" <= ? AND "end" > ? AND status = 'confirmed' ORDER BY start DESC LIMIT 50`, now - 2 * 3600e3, now - 7 * DAY).toArray();
+        return { own: true, emails: !!(this.env.EMAIL_FROM && (this.env.ZEPTO_TOKEN || this.env.ZOHO_REFRESH_TOKEN)), pending: all.filter(b => b.status === "pending"), upcoming: all.filter(b => b.status === "confirmed"),
+          past: await Promise.all(past.map(r => this.view(r))) };
+      }
+      case "noshow": {
+        const b = this.row(a.id); if (!b) throw bad(404, "This booking was not found.");
+        if (b.status !== "confirmed" || b.start > Date.now()) throw bad(409, "Only a past confirmed consultation can be marked as no-show.");
+        this.sql.exec(`UPDATE bookings SET absent = 1, updated = ? WHERE id = ?`, Date.now(), b.id);
+        return { ok: true };
+      }
+      case "window": {
+        const from = Number(a.from) || 0, to = Number(a.to) || 0;
+        const rows = this.sql.exec(`SELECT * FROM bookings WHERE start >= ? AND start < ? AND status = 'confirmed' ORDER BY start LIMIT 300`, from, to).toArray();
+        return { rows: await Promise.all(rows.map(r => this.view(r))) };
       }
       case "export": {
         const m = /^(\d{4})-(\d{2})$/.exec(a.month || ""); if (!m) throw bad(400, "Choose a month.");
@@ -242,7 +256,7 @@ export class Calendar {
   async view(b) {
     const p = await this.open(b.enc);
     return { uid: b.id, status: b.status, title: b.title || b.slug, slug: b.slug, start: new Date(b.start).toISOString(), end: new Date(b.end).toISOString(),
-      name: p.name || "Patient", email: p.email || "", phone: p.phone || "", notes: p.notes || "", utr: p.utr || "", tz: p.tz || "", created: new Date(b.created).toISOString() };
+      name: p.name || "Patient", email: p.email || "", phone: p.phone || "", notes: p.notes || "", utr: p.utr || "", tz: p.tz || "", absent: !!b.absent, created: new Date(b.created).toISOString() };
   }
 
   /* ---------- encryption of patient details ---------- */
