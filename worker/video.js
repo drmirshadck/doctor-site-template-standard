@@ -12,7 +12,10 @@
  *     from 15 minutes before the start until 60 minutes after the end.
  *   - Doctor: logged in with their PIN (the dashboard's Start call), from 60 minutes before until 3 hours after.
  *
- * Routes:  POST /video/join  {d, b, t}  (patient)   or  {d, b} + Authorization: Bearer <session> (doctor)
+ * Consent: the patient ticks "I agree" on the room page before joining ({consent: true}); the time is saved
+ *   (KV "consent:<doctor>:<booking>", kept RETAIN_DAYS) and the doctor's join shows it. Without it: {needsConsent: true}.
+ *
+ * Routes:  POST /video/join  {d, b, t, consent}  (patient)   or  {d, b} + Authorization: Bearer <session> (doctor)
  *          GET  /video/ws?ticket=...      (WebSocket, the two sides exchange connection messages)
  */
 import { call, manageToken } from "./own.js";
@@ -51,14 +54,21 @@ export async function videoRoute(req, env, url, p, opts) {
   if (now < opens) return json({ ok: false, wait: true, opens: new Date(opens).toISOString(), start: b.start, error: "The room opens " + early + " minutes before your consultation." });
   if (now > closes) throw err(410, "This consultation time has passed.");
 
+  const info = { ok: true, role, me: role === "doctor" ? doc.name : b.name, other: role === "doctor" ? b.name : doc.name, title: b.title, start: b.start, end: b.end };
+
+  // patient consent: asked once per consultation, before the room opens; the time is kept with the clinic's records
+  const ckey = "consent:" + doc.id + ":" + uid;
+  let consentAt = env.PUSH ? await env.PUSH.get(ckey) : null;
+  if (role === "patient" && !consentAt) {
+    if (a.consent !== true) return json({ ...info, needsConsent: true });
+    consentAt = new Date().toISOString();
+    if (env.PUSH) await env.PUSH.put(ckey, consentAt, { expirationTtl: (Number(env.RETAIN_DAYS) || 365) * 86400 });
+  }
+
   const exp = Math.min(closes, now + 4 * 3600e3);
   const ticket = await sign(env, [doc.id, uid, role, exp].join("|"));
   if (role === "patient" && opts.onWaiting) { try { await opts.onWaiting(doc, b); } catch (e) {} }
-  return json({
-    ok: true, role, ticket, iceServers: await iceServers(env),
-    me: role === "doctor" ? doc.name : b.name, other: role === "doctor" ? b.name : doc.name,
-    title: b.title, start: b.start, end: b.end
-  });
+  return json({ ...info, ticket, iceServers: await iceServers(env), consentAt: consentAt || null });
 }
 
 async function wsRoute(req, env, url, opts) {
