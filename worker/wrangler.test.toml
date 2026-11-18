@@ -4,6 +4,7 @@ name = "dotcom-by-arshees-calendar-test"
 main = "worker.js"
 compatibility_date = "2026-11-01"
 workers_dev = true
+keep_vars = true          # a deploy never removes values added in the Cloudflare dashboard
 
 [vars]
 ALLOWED_ORIGINS = "https://arshees.com,https://www.arshees.com"

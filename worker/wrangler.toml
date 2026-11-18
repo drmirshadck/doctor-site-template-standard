@@ -3,6 +3,7 @@ name = "dr-sample-helper"
 main = "worker.js"
 compatibility_date = "2026-11-01"
 workers_dev = true
+keep_vars = true          # a deploy never removes values added in the Cloudflare dashboard
 
 [vars]
 DOCTOR_NAME = "Dr. Sample Name"
