@@ -1,5 +1,5 @@
 // Makes the per-doctor secrets for the Cloudflare helper.
-// Usage: node make-secrets.mjs <PIN>        (PIN = 4–8 digits chosen for the doctor)
+// Usage: node make-secrets.mjs <PIN>        (PIN = 4–8 digits chosen for the doctor; add --starter for a Starter site)
 // Prints values to paste into Cloudflare → Worker → Settings → Variables and Secrets (type: Secret).
 // Nothing is saved to disk. CAL_API_KEY and DAILY_API_KEY come from the doctor's own accounts.
 import { webcrypto as c } from "node:crypto";
@@ -25,9 +25,11 @@ Object.assign(out, {
 
   SESSION_SECRET: rand(32),
   DATA_KEY: rand(32),   // own calendar: encrypts patient details. Keep a copy in Studio Desk; never change it once bookings exist.
-  CAL_WEBHOOK_SECRET: rand(24),
-  VAPID_PUBLIC_KEY: b64u(pub),
-  VAPID_PRIVATE_JWK: JSON.stringify({ kty: jwk.kty, crv: jwk.crv, x: jwk.x, y: jwk.y, d: jwk.d })
+  ...(process.argv.includes("--starter") ? {} : {   // Starter (--starter): no phone alerts, so no VAPID keys
+    CAL_WEBHOOK_SECRET: rand(24),
+    VAPID_PUBLIC_KEY: b64u(pub),
+    VAPID_PRIVATE_JWK: JSON.stringify({ kty: jwk.kty, crv: jwk.crv, x: jwk.x, y: jwk.y, d: jwk.d })
+  })
 });
 if (process.argv.includes("--json")) console.log(JSON.stringify(out));
 else for (const [k, v] of Object.entries(out)) console.log(`${k}\n${v}\n`);

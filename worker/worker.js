@@ -1,4 +1,6 @@
-/* DotCom by Arshees — doctor helper (Cloudflare Worker), Standard package.
+/* DotCom by Arshees — doctor helper (Cloudflare Worker). Same code for Starter and Standard.
+ *
+ * PLAN (var): "starter" = email notifications only (no phone alerts); anything else = Standard (phone alerts + email).
  *
  * Keeps the doctor's Cal.com and Daily keys secret and powers doctor.html:
  *   GET  /book/info, /book/slots, POST /book/create -> own booking screen on the website
@@ -68,7 +70,7 @@ async function route(req, env, url, fromSite) {
 
   if (p === "/health") return json({ ok: true });
   if (p === "/cal-webhook" && M === "POST") return calWebhook(req, env, url.searchParams.get("d") || "");
-  if (p === "/vapid" && M === "GET") return json({ key: env.VAPID_PUBLIC_KEY || "" });
+  if (p === "/vapid" && M === "GET") return json({ key: env.PLAN === "starter" ? "" : (env.VAPID_PUBLIC_KEY || "") });
   if (p === "/last-event" && M === "GET") return json((await env.PUSH.get("lastEvent", "json")) || {});
 
   // everything below is for the doctor's own website only
@@ -121,6 +123,7 @@ const subsKey = d => d.id === "main" ? "subs" : "subs:" + d.id;
 function hooks(env) {
   const many = doctors(env).length > 1;
   const alert = async (doc, type) => {
+    if (env.PLAN === "starter") return;   // Starter: email only, no phone alerts
     await env.PUSH.put("lastEvent", JSON.stringify({ type, at: Date.now(), doctor: many ? doc.name : "" }));
     await pushAll(env, subsKey(doc));
   };
