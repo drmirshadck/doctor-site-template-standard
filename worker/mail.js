@@ -62,7 +62,7 @@ function shell(env, title, bodyHtml) {
 <p style="margin:0 0 4px;font-size:13px;color:#5d727a;letter-spacing:.04em;text-transform:uppercase">${clinic}</p>
 <h1 style="margin:0 0 16px;font-size:22px;line-height:1.3;color:#04244d">${esc(title)}</h1>
 ${bodyHtml}
-<p style="margin:22px 0 0;font-size:13px;color:#5d727a">Questions? ${wa ? `Message ${clinic} on <a href="https://wa.me/${wa}" style="color:#005293">WhatsApp</a>.` : `Please contact ${clinic}.`} This mailbox is not checked for replies.</p>
+<p style="margin:22px 0 0;padding:12px 14px;background:#fff6e5;border-radius:10px;font-size:13px;color:#5d4a1f"><b>Please do not reply to this email</b> — replies are not read. ${wa ? `For any questions, message ${clinic} on <a href="https://wa.me/${wa}" style="color:#005293">WhatsApp</a>.` : `For any questions, please contact ${clinic}.`}</p>
 </div>
 <p style="text-align:center;font-size:11px;color:#8aa0a8;margin:14px 0 0">Sent for ${clinic}.</p>
 </div></body></html>`;
